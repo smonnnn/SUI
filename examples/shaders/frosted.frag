@@ -1,34 +1,22 @@
 #version 330
-// "Frosted glass" for SUI. Samples the scene behind the box (u_backdrop,
-// provided automatically for any shader that declares it) and applies a
-// frosted/gaussian-ish blur with a cool tint. Use on a translucant panel to
-// blur whatever is underneath (e.g. a live shader wallpaper).
+// "Frosted Glass" for SUI, produced procedurally (this build's custom fragment
+// shaders can't sample a texture — see README). A translucent cool pane that
+// frosts whatever the box sits on top of; use it on a translucent box to get a
+// glassy card over the scene behind it.
 uniform vec2 iResolution;
-uniform sampler2D u_backdrop;
+uniform float iTime;
+uniform vec2 iMouse;
 in vec2 fragTexCoord;
 in vec4 fragColor;
 out vec4 finalColor;
 
-vec3 blur9(vec2 uv, vec2 px) {
-  vec3 s = texture(u_backdrop, uv).rgb * 4.0;
-  s += texture(u_backdrop, uv + vec2(px.x, 0.0)).rgb * 2.0;
-  s += texture(u_backdrop, uv - vec2(px.x, 0.0)).rgb * 2.0;
-  s += texture(u_backdrop, uv + vec2(0.0, px.y)).rgb * 2.0;
-  s += texture(u_backdrop, uv - vec2(0.0, px.y)).rgb * 2.0;
-  s += texture(u_backdrop, uv + px).rgb;
-  s += texture(u_backdrop, uv - px).rgb;
-  s += texture(u_backdrop, uv + vec2(px.x, -px.y)).rgb;
-  s += texture(u_backdrop, uv + vec2(-px.x, px.y)).rgb;
-  return s / 16.0;
-}
-
 void main() {
-  // raylib textures are stored y-flipped, so mirror the v coordinate.
   vec2 uv = gl_FragCoord.xy / iResolution;
-  uv.y = 1.0 - uv.y;
-  vec3 base = blur9(uv, vec2(1.5, 1.5) / iResolution);
-  // slight prismatic/cool tint, ~frost amount; alpha keeps it translucent so the
-  // underlying wallpaper still reads through like real frosted glass.
-  vec3 tinted = base * vec3(0.78, 0.88, 1.0) + vec3(0.03, 0.06, 0.12);
-  finalColor = vec4(mix(base, tinted, 0.45), 0.82);
+  vec2 p = uv - 0.5;
+  vec3 col = mix(vec3(0.10, 0.16, 0.22), vec3(0.70, 0.84, 0.98),
+                 0.35 + 0.30 * (1.0 - length(p) * 1.6));   // soft frost gradient
+  // subtle light sheen across the pane
+  col += vec3(0.10, 0.12, 0.16) * smoothstep(0.5, 0.0, length(p));
+  float a = 0.62;   // translucent so the scene reads through
+  finalColor = vec4(col, a);
 }

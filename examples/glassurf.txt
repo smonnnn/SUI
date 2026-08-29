@@ -1,0 +1,137 @@
+# ===========================================================================
+#  SUI example — "Glassurf" / "Lens Control"
+#  The Waves shader is a live wallpaper; on top, a row of lens buttons each
+#  refRACT the animation behind them (a convex bulge, prismatic rim, specular
+#  sheen that tracks the mouse). Clicking a lens bumps the counter via a python
+#  callback.
+#
+#  Run:  python box.py examples/glassurf.txt
+# ===========================================================================
+
+@python
+import datetime
+
+def clk():
+    return datetime.datetime.now().strftime("%H:%M:%S")
+
+STATE = {"n": 0}
+
+def bump(box, d):
+    STATE["n"] += int(d)
+    return True
+
+def count():
+    return "refraction  %d" % STATE["n"]
+@end
+
+# ------ colors ------
+BG =            (10, 18, 20, 255)
+TEXT =          (240, 244, 240, 255)
+ACCENT =        (120, 210, 235, 255)
+DARK =          (10, 24, 26, 255)
+
+[1-root]:
+	.vertical
+	.margin=0
+	.padding=0
+	[1-wallpaper]:
+		.shader=shaders/waves.frag
+		.color=BG
+		.padding=0
+		.margin=0
+		.border=0
+		.radius=0
+		.vertical
+		[1-topbar]:
+			.horizontal
+			.strength=8
+			.color=(14, 26, 30, 150)
+			.padding=12
+			.margin=0
+			.radius=0
+			[1-title]:
+				.color=None
+				.text_color=TEXT
+				.text="LENS CONTROL"
+				.padding=0
+				.margin=0
+				.strength=50
+			[1-clock]:
+				.color=None
+				.text_color=ACCENT
+				.text=calc(clk())
+				.align_x=right
+				.padding=0
+				.margin=0
+				.strength=30
+		[1-pad]:
+			.horizontal
+			.strength=24
+			.color=None
+			.padding=10
+			.margin=0
+			[1-lens.a]:
+				.shader=shaders/glass.frag
+				.color=None
+				.padding=6
+				.margin=8
+				.strength=25
+				.radius=40
+				.click=bump(a, 1)
+			[1-lens.b]:
+				.shader=shaders/glass.frag
+				.color=None
+				.padding=6
+				.margin=8
+				.strength=25
+				.radius=40
+				.click=bump(b, 1)
+			[1-lens.c]:
+				.shader=shaders/glass.frag
+				.color=None
+				.padding=6
+				.margin=8
+				.strength=25
+				.radius=40
+				.click=bump(c, 1)
+			[1-lens.d]:
+				.shader=shaders/glass.frag
+				.color=None
+				.padding=6
+				.margin=8
+				.strength=25
+				.radius=40
+				.click=bump(d, 1)
+		[1-card]:
+			.color=(14, 26, 30, 120)
+			.margin=14
+			.radius=14
+			.strength=50
+			.vertical
+			[1-card-body]:
+				.color=None
+				.text_color=TEXT
+				.text="Each lens is a live u_backdrop shader: it samples the wall of Waves behind it, bulges it and splits a prism at the rim. Move the mouse over one and the sheen follows. Click to refract a count through a python callback."
+				.padding=14
+				.margin=4
+			[1-counter]:
+				.horizontal
+				.color=(10, 24, 26, 140)
+				.padding=10
+				.margin=6
+				.radius=12
+				[1-reset]:
+					.text="RESET"
+					.color=ACCENT
+					.text_color=DARK
+					.padding=12
+					.margin=4
+					.radius=10
+					.align_x=center
+					.click=bump(reset, -999)
+				[1-score]:
+					.color=None
+					.text_color=TEXT
+					.align_x=center
+					.strength=40
+					.text=calc(count())
