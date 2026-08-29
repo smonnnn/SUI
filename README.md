@@ -91,6 +91,7 @@ examples/
   demo.txt        the main showcase layout (sidebar, pages, video player)
   flow.txt        "Flow Field" — a generative particle simulation (script())
   shader.txt      "Shader Lab" — GPU fragment shaders rendered to a texture
+  shadertop.txt   a live shader wallpaper behind translucent widgets
   test_layout_2.txt  a minimal original example
   assets/         final artwork committed here: logo.png + video.mp4
   shaders/        .frag shaders (plasma, swirl, mandelbrot)
