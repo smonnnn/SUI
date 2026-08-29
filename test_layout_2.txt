@@ -1,0 +1,68 @@
+# These are RGBA colors defined and used in the layout.
+BACKGROUND =    (202, 220, 174, 255)
+FOREGROUND =    (225, 233, 201, 255)
+BUTTON =        (237, 163, 90, 255)
+BUTTON_H =      (254, 232, 217, 255)
+BORDER =        (0, 34, 34, 255)
+TEXT =          (0, 0, 0, 0)
+
+# First number before the dash is the box's strength value.
+[10-default]:  # New boxes use these default parameters
+	.text=""
+	.color=FOREGROUND
+	.border_color=BORDER
+	.hidden=False
+	.horizontal
+	.padding=0
+	.margin=5
+	.border=0
+
+[1-root]:
+	[1-layout]:
+		.color=BACKGROUND
+		.vertical
+		.margin=0
+		[10-header]:
+			.color=FOREGROUND
+			.horizontal
+			.border=1
+			.hidden=calc(ratio < 1.0)
+		[90-body]:
+			.color=FOREGROUND
+			.horizontal=calc(ratio > 1.0)
+			[20-sidebar]:
+				.color=FOREGROUND
+				.vertical
+				[10-item.home]:  # 'item' is the shared attributes name, 'item.home' is the optional unique name. All attributes defined under 'item' boxes are shared except those specified multiple times, those are unique per box.
+					.text="Home"
+					.margin=1  # left, right, top, bottom
+					.padding=1  # all set to 1
+					.color=BUTTON
+					.click=set_children(swap, content.home)
+				[10-item.contact]:
+					.text="Contact"
+					.click=set_children(swap, content.contact)
+				[10-item.research]:
+					.text="Research"
+					.click=set_children(swap, content.research)
+				[70-empty]:
+					.color=None  # No color set == invisible.
+					.hidden=calc(ratio < 1.0)
+			[80-swap]:
+				[1-content.home]:
+					.color=BACKGROUND
+					.border=1
+					.vertical
+					.text="Welcome! Click on one of the navigation buttons to see more of this page."
+
+[1-content.contact]:
+	.text=""
+	[15-title]:
+		.text="Who am I?"
+		.border=1
+	[60-text]:
+		.text="My name is Simon, I like to reinvent the wheel. Feel free to add me on X: @Kinker_0"
+		.border=1
+
+[1-content.research]:
+	.text="Nothing here yet :)"
