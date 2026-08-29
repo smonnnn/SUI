@@ -31,6 +31,11 @@ containers, textures/animations/video, and first-class Python integration
   RenderTexture every frame (a GPU-generated "video"), with `iTime`,
   `iResolution` and `iMouse` uniforms. Write your own `.frag` and point a box
   at it (`examples/shaders/*`).
+- **Backdrop sampling ("frosted glass")** — any shader that declares a
+  `u_backdrop` sampler gets a screen-sized texture of the scene *behind* its
+  box each frame, so it can blur/tint/refract what's underneath. Use it on a
+  translucent box to get glass over whatever's behind it (see
+  `examples/shaders/frosted.frag`).
 - **Hover / selected colors** — `.hover_color` and `.selected_color`.
 - **Shared attribute groups** — boxes named like `item.home` form an `item` group;
   attributes appearing on only one member are inherited by the rest, while
@@ -92,6 +97,7 @@ examples/
   flow.txt        "Flow Field" — a generative particle simulation (script())
   shader.txt      "Shader Lab" — GPU fragment shaders rendered to a texture
   shadertop.txt   a live shader wallpaper behind translucent widgets
+  shaders/        shader sources (plasma, swirl, mandelbrot, waves, frosted)
   test_layout_2.txt  a minimal original example
   assets/         final artwork committed here: logo.png + video.mp4
   shaders/        .frag shaders (plasma, swirl, mandelbrot)

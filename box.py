@@ -1124,6 +1124,8 @@ def _scissor(rect):
 _SHADERS = {}
 _SHADER_RTS = []
 _SHADER_BOXES = []
+_SCENE_RT = None          # screen-sized backdrop for u_backdrop sampling
+_STATIC_PASS = False      # when True we are rendering the backdrop (glass omitted)
 
 def _get_shader(path):
     if path not in _SHADERS:
@@ -1149,6 +1151,25 @@ def _unload_shaders():
             pass
     _SHADER_RTS.clear()
     _SHADER_BOXES.clear()
+    global _SCENE_RT
+    if _SCENE_RT is not None:
+        try:
+            unload_render_texture(_SCENE_RT)
+        except Exception:
+            pass
+        _SCENE_RT = None
+
+
+def _ensure_scene_rt(w, h):
+    global _SCENE_RT
+    if _SCENE_RT is None or _SCENE_RT.texture.width != int(w) or _SCENE_RT.texture.height != int(h):
+        if _SCENE_RT is not None:
+            try:
+                unload_render_texture(_SCENE_RT)
+            except Exception:
+                pass
+        _SCENE_RT = load_render_texture(int(w), int(h))
+    return _SCENE_RT
 
 def _draw_shader(box, x, y, w, h, clip):
     """Blit the box's shader render-texture. The actual render happens in the
@@ -1207,8 +1228,10 @@ def _render_one_shader(box):
         loc_t = get_shader_location(sh, b"iTime")
         loc_r = get_shader_location(sh, b"iResolution")
         loc_m = get_shader_location(sh, b"iMouse")
+        loc_b = get_shader_location(sh, b"u_backdrop")
     except Exception:
-        loc_t = loc_r = loc_m = -1
+        loc_t = loc_r = loc_m = loc_b = -1
+    box._glass = loc_b >= 0
     tf = _pr.ffi.new("float *", get_time())
     rv = _pr.ffi.new("float[2]", [float(wt), float(ht)])
     mp = get_mouse_position()
@@ -1219,6 +1242,13 @@ def _render_one_shader(box):
         set_shader_value_v(sh, loc_r, rv, 1, 1)
     if loc_m >= 0:
         set_shader_value_v(sh, loc_m, mv, 1, 1)
+    # the backdrop texture (scene rendered without this glass box) so the
+    # shader can sample/refract what is visually underneath it.
+    if loc_b >= 0 and _SCENE_RT is not None:
+        try:
+            set_shader_value_texture(sh, loc_b, _SCENE_RT.texture)
+        except Exception:
+            pass
     begin_texture_mode(rt)
     clear_background(BLACK)
     begin_shader_mode(sh)
@@ -1461,12 +1491,16 @@ def _draw_self(box, clip):
     _clip_with(container_clip, _paint)
     if content_clip is not None and content_clip.width > 0 and content_clip.height > 0:
         if box.shader:
-            _draw_shader(box, cx, cy, cw, ch, content_clip)
+            # backdrop pass omits 'glass' shaders (those that sample u_backdrop)
+            # so the backdrop shows the scene behind them for blur/refraction.
+            if not (_STATIC_PASS and getattr(box, '_glass', False)):
+                _draw_shader(box, cx, cy, cw, ch, content_clip)
         else:
             _draw_media(box, cx, cy, cw, ch, content_clip)
         _draw_text(box, cx, cy, cw, ch, content_clip)
     # inline python overlay (drawn unclipped so scripts can draw freehand)
-    script_run(box)
+    if not _STATIC_PASS:
+        script_run(box)
 
 
 def _render(box, clip):
@@ -1954,6 +1988,19 @@ def main():
     while not window_should_close():
         i += 1
         _refresh_ctx()
+
+        # backdrop pass: render the scene (glass shaders omitted) into a
+        # screen-sized texture so glass boxes can sample/blur what's behind.
+        global _STATIC_PASS
+        if any(getattr(b, "_glass", False) for b in _BOXES):
+            sw, sh = int(get_screen_width()), int(get_screen_height())
+            if _ensure_scene_rt(sw, sh) is not None:
+                _STATIC_PASS = True
+                begin_texture_mode(_SCENE_RT)
+                clear_background(WHITE)
+                draw(_ROOT)
+                end_texture_mode()
+        _STATIC_PASS = False
 
         begin_drawing()
         clear_background(WHITE)
