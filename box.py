@@ -312,7 +312,7 @@ def build_box_hierarchy(boxes_dict: Dict[str, Dict]) -> Dict[str, Box]:
 
     return box_objects
 
-boxes = load("./sui/test_layout_2.txt")
+boxes = load("./test_layout_2.txt")
 boxes = build_box_hierarchy(boxes)
 root = boxes["root"]
 
