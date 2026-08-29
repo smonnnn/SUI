@@ -10,7 +10,7 @@
 import math
 from math import sin, cos, pi
 
-SHADERS = ["shaders/plasma.frag", "shaders/swirl.frag", "shaders/mandelbrot.frag"]
+SHADERS = ["shaders/plasma.frag", "shaders/swirl.frag", "shaders/mandelbrot.frag", "shaders/tunnel.frag"]
 
 def shader_pick(box, idx):
     box.name  # (unused) — the target is the stage
@@ -106,6 +106,9 @@ LINE =          (6, 46, 48, 255)
 			[1-b.c]:
 				.text="Mandelbrot"
 				.click=shader_pick(b.c, 2)
+			[1-b.d]:
+				.text="Tunnel"
+				.click=shader_pick(b.d, 3)
 			[1-fill]:
 				.color=BG
 			[1-tip]:
