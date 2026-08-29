@@ -612,6 +612,7 @@ class Box:
     children: List[Box] = field(default_factory=list)
     texture_fit: str = "stretch"     # stretch | contain | cover | tile | crop
     texture: Texture = None
+    shader: str = ""                 # fragment-shader file rendered to a texture
     script: str = ""                 # inline python executed every frame
     functions: dict = field(default_factory=lambda: {})
     _media: Media = None
@@ -1119,6 +1120,114 @@ def _scissor(rect):
     return Rectangle(int(rect.x), int(rect.y), int(rect.width), int(rect.height))
 
 
+# ---- shader-backed media ("procedural video") ----
+_SHADERS = {}
+_SHADER_RTS = []
+_SHADER_BOXES = []
+
+def _get_shader(path):
+    if path not in _SHADERS:
+        try:
+            _SHADERS[path] = load_shader(_pr.ffi.NULL, path)
+        except Exception as e:
+            print("[SUI] shader load failed:", path, e)
+            _SHADERS[path] = None
+    return _SHADERS[path]
+
+def _unload_shaders():
+    for s in _SHADERS.values():
+        if s is not None and s.id:
+            try:
+                unload_shader(s)
+            except Exception:
+                pass
+    _SHADERS.clear()
+    for rt in _SHADER_RTS:
+        try:
+            unload_render_texture(rt)
+        except Exception:
+            pass
+    _SHADER_RTS.clear()
+    _SHADER_BOXES.clear()
+
+def _draw_shader(box, x, y, w, h, clip):
+    """Blit the box's shader render-texture. The actual render happens in the
+    post-frame pass (raylib's shader+BeginTextureMode needs to run outside the
+    render frame)."""
+    if w < 2 or h < 2:
+        return
+    box._shader_area = (x, y, w, h)
+    if box not in _SHADER_BOXES:
+        _SHADER_BOXES.append(box)
+    rt = getattr(box, "_shader_rt", None)
+    if rt is None or rt.texture.width != int(w) or rt.texture.height != int(h):
+        return  # render happens this frame's post-pass; blit next frame
+    r = _scissor(clip)
+    if r:
+        begin_scissor_mode(int(r.x), int(r.y), int(r.width), int(r.height))
+    draw_texture_pro(rt.texture, Rectangle(0, 0, int(w), int(h)),
+                     Rectangle(float(x), float(y), float(w), float(h)),
+                     Vector2(0, 0), 0, WHITE)
+    if r:
+        end_scissor_mode()
+
+def _render_shader_pass():
+    """Render every shader box to its RenderTexture (outside the frame)."""
+    for box in _SHADER_BOXES:
+        try:
+            _render_one_shader(box)
+        except Exception as e:
+            print("[SUI] shader render error:", e)
+    _SHADER_BOXES.clear()
+
+def _render_one_shader(box):
+    if not box.shader:
+        return
+    sh = _get_shader(box.shader)
+    if sh is None or not sh.id:
+        return
+    area = getattr(box, "_shader_area", None)
+    if area is None:
+        area = (box.rect.x, box.rect.y, box.rect.width, box.rect.height)
+    x, y, w, h = area
+    wt, ht = int(w), int(h)
+    if wt < 2 or ht < 2:
+        return
+    rt = getattr(box, "_shader_rt", None)
+    if rt is None or rt.texture.width != wt or rt.texture.height != ht:
+        if rt is not None:
+            try:
+                unload_render_texture(rt)
+            except Exception:
+                pass
+        rt = load_render_texture(wt, ht)
+        box._shader_rt = rt
+        _SHADER_RTS.append(rt)
+    try:
+        loc_t = get_shader_location(sh, b"iTime")
+        loc_r = get_shader_location(sh, b"iResolution")
+        loc_m = get_shader_location(sh, b"iMouse")
+    except Exception:
+        loc_t = loc_r = loc_m = -1
+    tf = _pr.ffi.new("float *", time.time())
+    rv = _pr.ffi.new("float[2]", [float(wt), float(ht)])
+    mp = get_mouse_position()
+    mv = _pr.ffi.new("float[2]", [mp.x - x, mp.y - y])
+    if loc_t >= 0:
+        set_shader_value(sh, loc_t, tf, 0)
+    if loc_r >= 0:
+        set_shader_value_v(sh, loc_r, rv, 1, 1)
+    if loc_m >= 0:
+        set_shader_value_v(sh, loc_m, mv, 1, 1)
+    begin_texture_mode(rt)
+    clear_background(BLACK)
+    begin_shader_mode(sh)
+    draw_rectangle(0, 0, wt, ht, WHITE)
+    end_shader_mode()
+    end_texture_mode()
+
+
+
 # ---------------------------------------------------------------------------
 # Drawing helpers
 # ---------------------------------------------------------------------------
@@ -1351,7 +1460,10 @@ def _draw_self(box, clip):
 
     _clip_with(container_clip, _paint)
     if content_clip is not None and content_clip.width > 0 and content_clip.height > 0:
-        _draw_media(box, cx, cy, cw, ch, content_clip)
+        if box.shader:
+            _draw_shader(box, cx, cy, cw, ch, content_clip)
+        else:
+            _draw_media(box, cx, cy, cw, ch, content_clip)
         _draw_text(box, cx, cy, cw, ch, content_clip)
     # inline python overlay (drawn unclipped so scripts can draw freehand)
     script_run(box)
@@ -1640,6 +1752,8 @@ def dict_to_box(box_dict: Dict[str, Any], boxes: Dict[str, Box]) -> Box:
         box._media = MEDIA.get('video', _resolve_media(box_dict['video']), fps=box_dict.get('video_fps', 24))
     elif 'anim' in box_dict and box_dict['anim']:
         box._media = MEDIA.get('anim', _resolve_media(box_dict['anim']), fps=box_dict.get('anim_fps', 8))
+    if 'shader' in box_dict and box_dict['shader']:
+        box.shader = _resolve_media(box_dict['shader'])
 
     # callbacks
     for key in ('click', 'hover'):
@@ -1860,6 +1974,7 @@ def main():
                 click(selected)
         end_drawing()
 
+        _render_shader_pass()   # render shaders to their textures (out of frame)
         _run_pending_open()   # native file dialog, safely outside the frame
 
         if _RELOAD_REQUEST.is_set():
@@ -1872,6 +1987,7 @@ def main():
             break
 
     MEDIA.unload_all()
+    _unload_shaders()
     try:
         close_audio_device()
     except Exception:

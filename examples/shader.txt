@@ -1,0 +1,129 @@
+# ===========================================================================
+#  SUI example — "Shader Lab"
+#  A full-screen procedural shader rendered to a texture each frame (i.e.
+#  GPU-generated "video"). Click the buttons to switch shaders.
+#
+#  Run:  python box.py examples/shader.txt
+# ===========================================================================
+
+@python
+import math
+from math import sin, cos, pi
+
+SHADERS = ["shaders/plasma.frag", "shaders/swirl.frag", "shaders/mandelbrot.frag"]
+
+def shader_pick(box, idx):
+    box.name  # (unused) — the target is the stage
+    boxes["stage"].shader = _resolve_media(SHADERS[idx % len(SHADERS)])
+    return True
+
+def shader_status():
+    return "gpu fragment shader -> render texture"
+@end
+
+# ------ colors ------
+BG =            (10, 18, 20, 255)
+PANEL =         (18, 28, 30, 255)
+PANEL_LIGHT =   (30, 44, 46, 255)
+ACCENT =        (237, 163, 90, 255)
+ACCENT_SOFT =   (254, 232, 217, 255)
+TEXT =          (235, 240, 235, 255)
+MUTED =         (150, 170, 168, 255)
+LINE =          (6, 46, 48, 255)
+
+[4-default]:
+	.color=BG
+	.border_color=LINE
+	.text_color=TEXT
+	.horizontal
+	.padding=8
+	.margin=4
+	.border=0
+	.radius=10
+	.align_x=left
+	.align_y=top
+
+[1-root]:
+	.vertical
+	.margin=0
+	.padding=0
+	.radius=0
+	[14-header]:
+		.color=PANEL
+		.horizontal
+		.padding=10
+		.radius=0
+		[1-h-title]:
+			.color=None
+			.vertical
+			.align_y=center
+			.padding=0
+			.strength=40
+			[1-h-name]:
+				.text="SHADER LAB"
+				.color=None
+				.align_x=center
+				.padding=0
+				.margin=0
+			[1-h-status]:
+				.text=calc(shader_status())
+				.color=None
+				.text_color=ACCENT
+				.align_x=center
+				.padding=0
+				.margin=0
+	[86-body]:
+		.horizontal
+		.padding=0
+		.margin=0
+		.radius=0
+		[24-sidebar]:
+			.vertical
+			.scroll
+			.color=PANEL
+			.padding=10
+			.margin=0
+			.radius=0
+			[1-note]:
+				.color=None
+				.text_color=MUTED
+				.text="SHADERS"
+				.padding=2
+			[1-b.a]:
+				.text="Plasma"
+				.color=ACCENT
+				.hover_color=ACCENT_SOFT
+				.selected_color=LINE
+				.padding=14
+				.margin=4
+				.radius=10
+				.align_x=center
+				.text_color=LINE
+				.click=shader_pick(b.a, 0)
+			[1-b.b]:
+				.text="Swirl"
+				.click=shader_pick(b.b, 1)
+			[1-b.c]:
+				.text="Mandelbrot"
+				.click=shader_pick(b.c, 2)
+			[1-fill]:
+				.color=BG
+			[1-tip]:
+				.color=None
+				.text_color=MUTED
+				.align_x=center
+				.text="Write your own GLSL .frag and set it with .shader="
+				.padding=6
+		[76-stage-area]:
+			.vertical
+			.color=BG
+			.padding=0
+			.margin=0
+			.radius=0
+			[1-stage]:
+				.shader=shaders/plasma.frag
+				.color=None
+				.padding=0
+				.margin=0
+				.radius=0
+				.border=0

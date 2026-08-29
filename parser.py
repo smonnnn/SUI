@@ -32,7 +32,7 @@ def parse_ints(string):
 
 def _norm_value(param_name, param_string, colors):
     """Normalise a raw attribute value into a Python value."""
-    if param_name in ("script", "texture", "anim", "video"):
+    if param_name in ("script", "texture", "anim", "video", "shader"):
         return param_string
     if param_name in ("align_x", "align_y", "texture_fit"):
         return param_string

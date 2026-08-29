@@ -27,6 +27,10 @@ containers, textures/animations/video, and first-class Python integration
   with `texture_fit` = `stretch | contain | cover | tile`. Video streams via
   ffmpeg (system binary, or the one bundled with `imageio-ffmpeg`), including
   audio playback, play/pause, seek and mute.
+- **Shaders** — `.shader=file.frag` renders a GLSL fragment shader into a
+  RenderTexture every frame (a GPU-generated "video"), with `iTime`,
+  `iResolution` and `iMouse` uniforms. Write your own `.frag` and point a box
+  at it (`examples/shaders/*`).
 - **Hover / selected colors** — `.hover_color` and `.selected_color`.
 - **Shared attribute groups** — boxes named like `item.home` form an `item` group;
   attributes appearing on only one member are inherited by the rest, while
@@ -85,8 +89,11 @@ setup.sh          venv + deps + asset generation + run
 README.md
 examples/
   demo.txt        the main showcase layout (sidebar, pages, video player)
+  flow.txt        "Flow Field" — a generative particle simulation (script())
+  shader.txt      "Shader Lab" — GPU fragment shaders rendered to a texture
   test_layout_2.txt  a minimal original example
   assets/         final artwork committed here: logo.png + video.mp4
+  shaders/        .frag shaders (plasma, swirl, mandelbrot)
 ```
 
 Media paths in a layout are resolved relative to the layout file, so
@@ -135,6 +142,7 @@ per line.
 | `texture`        | `.texture=assets/logo.png` | still image |
 | `anim`           | `.anim=assets/anim`        | frame-loop animation (`.anim_fps`) |
 | `video`          | `.video=assets/video.mp4`  | streamed video (`.video_fps`) |
+| `shader`         | `.shader=shaders/plasma.frag` | fragment shader → texture (GPU video) |
 | `texture_fit`    | `.texture_fit=contain`     | stretch/contain/cover/tile |
 | `click`          | `.click=set_children(swap, content.home)` | click callback |
 | `hover`          | `.hover=...`               | hover callback |
