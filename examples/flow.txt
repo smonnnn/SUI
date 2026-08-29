@@ -174,7 +174,7 @@ def flow_status():
 				.padding=2
 			# primary buttons — bp.* share styling, each keeps its own text/click
 			[1-bp.play]:
-				.text="Play / Pause"
+				.text=calc("Pause" if FLOW["alive"] else "Play")
 				.color=ACCENT
 				.hover_color=ACCENT_SOFT
 				.selected_color=LINE
@@ -216,13 +216,6 @@ def flow_status():
 				.padding=6
 			[1-bs.slow]:
 				.text="Slower"
-				.color=PANEL_LIGHT
-				.hover_color=ACCENT
-				.padding=14
-				.margin=4
-				.radius=10
-				.align_x=center
-				.text_color=TEXT
 				.click=flow_speed(bs.slow, -0.6)
 			[1-bs.fast]:
 				.text="Faster"

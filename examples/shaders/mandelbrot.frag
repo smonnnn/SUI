@@ -2,6 +2,8 @@
 // Fractal zoom — a slowly breathing Mandelbrot set.
 uniform vec2 iResolution;
 uniform float iTime;
+in vec2 fragTexCoord;
+in vec4 fragColor;
 out vec4 finalColor;
 void main(){
     vec2 uv = (gl_FragCoord.xy - 0.5 * iResolution.xy) / iResolution.y;

@@ -1209,7 +1209,7 @@ def _render_one_shader(box):
         loc_m = get_shader_location(sh, b"iMouse")
     except Exception:
         loc_t = loc_r = loc_m = -1
-    tf = _pr.ffi.new("float *", time.time())
+    tf = _pr.ffi.new("float *", get_time())
     rv = _pr.ffi.new("float[2]", [float(wt), float(ht)])
     mp = get_mouse_position()
     mv = _pr.ffi.new("float[2]", [mp.x - x, mp.y - y])
@@ -1800,7 +1800,7 @@ def _make_engine_ns(layout_file):
         # also expose raylib + this module's globals for calc/script
         ns.setdefault("__builtins__", __builtins__)
         for k, v in globals().items():
-            if k.startswith('_') and k not in ("Box", "Media", "MediaDB"):
+            if k.startswith('_') and k not in ("Box", "Media", "MediaDB", "_resolve_media"):
                 continue
             ns.setdefault(k, v)
         _EVAL = ns
