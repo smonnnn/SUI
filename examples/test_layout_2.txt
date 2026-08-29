@@ -23,6 +23,7 @@ TEXT =          (0, 0, 0, 0)
 		.vertical
 		.margin=0
 		[10-header]:
+			.text="This is a cool header :)"
 			.color=FOREGROUND
 			.horizontal
 			.border=1

@@ -1,0 +1,347 @@
+# ===========================================================================
+#  SUI demo — a small, readable layout.
+#  One property per line. Shared attribute groups: attributes defined on any
+#  box named like `item.home` belong to the `item` group and are inherited by
+#  the other `item.*` boxes, UNLESS they appear on more than one (then each
+#  box keeps its own). Here `item.home` holds the shared styling for all the
+#  nav buttons; `feed.0` holds the shared styling for the feed list.
+#
+#  Run:  python box.py demo.txt
+# ===========================================================================
+
+# ------ colors ------
+BG =            (10, 20, 20, 255)
+PANEL =         (48, 66, 68, 255)
+PANEL_LIGHT =   (66, 90, 92, 255)
+ACCENT =        (237, 163, 90, 255)
+ACCENT_SOFT =   (254, 232, 217, 255)
+TEXT =          (240, 240, 230, 255)
+MUTED =         (150, 165, 160, 255)
+LINE =          (6, 52, 52, 255)
+
+# ------ python helpers (available to calc / script / click) ------
+@python
+import math, datetime
+
+def clk():
+    return datetime.datetime.now().strftime("%H:%M:%S")
+
+def greeting(name):
+    return "Hello, " + name + "!"
+
+def bump(label):
+    label.clicks = getattr(label, "clicks", 0) + 1
+    label.text = "Clicks: %d" % label.clicks
+@end
+
+# ------ default styling inherited by every box ------
+[4-default]:
+	.color=BG
+	.border_color=LINE
+	.text_color=TEXT
+	.horizontal
+	.padding=8
+	.margin=4
+	.border=0
+	.radius=10
+	.align_x=left
+	.align_y=top
+
+[1-root]:
+	.vertical
+	.margin=0
+	.padding=0
+	.radius=0
+	[14-header]:
+		.color=PANEL
+		.horizontal
+		.padding=10
+		.radius=0
+		[1-brand]:
+			.texture=assets/logo.png
+			.texture_fit=contain
+			.color=None
+			.strength=22
+		[1-title]:
+			.color=None
+			.vertical
+			.align_y=center
+			.strength=40
+			[1-subtitle]:
+				.text="MEDIA HUB"
+				.color=None
+				.align_x=center
+				.padding=0
+			[1-clock]:
+				.text=calc(clk())
+				.color=None
+				.text_color=ACCENT
+				.align_x=center
+				.padding=0
+		[1-eq]:
+			.anim=assets/anim
+			.anim_fps=18
+			.texture_fit=cover
+			.color=None
+			.border=2
+			.strength=28
+	[86-body]:
+		.horizontal
+		.padding=0
+		.margin=0
+		.radius=0
+		[26-sidebar]:
+			.vertical
+			.scroll
+			.color=PANEL
+			.padding=8
+			.margin=0
+			.radius=0
+			[1-note]:
+				.color=None
+				.text_color=MUTED
+				.text="NAVIGATION"
+				.padding=2
+			# item.* share everything below except text/click
+			[1-item.home]:
+				.text="Home"
+				.color=ACCENT
+				.hover_color=ACCENT_SOFT
+				.selected_color=LINE
+				.padding=16
+				.margin=3
+				.radius=10
+				.click=set_children(swap, content.home)
+			[1-item.stats]:
+				.text="Stats"
+				.click=set_children(swap, content.stats)
+			[1-item.player]:
+				.text="Player"
+				.click=set_children(swap, content.player)
+			[1-feedlabel]:
+				.color=None
+				.text_color=ACCENT
+				.text="FEED"
+				.padding=8
+			# feed.* share everything below except text
+			[1-feed.0]:
+				.text="Item 00 - live stream"
+				.color=PANEL_LIGHT
+				.padding=12
+				.margin=3
+				.radius=8
+			[1-feed.1]:
+				.text="Item 01 - audio feed"
+			[1-feed.2]:
+				.text="Item 02 - highlights"
+			[1-feed.3]:
+				.text="Item 03 - reminders"
+			[1-feed.4]:
+				.text="Item 04 - weather"
+			[1-feed.5]:
+				.text="Item 05 - sports"
+			[1-feed.6]:
+				.text="Item 06 - stocks"
+			[1-feed.7]:
+				.text="Item 07 - trending"
+			[1-feed.8]:
+				.text="Item 08 - reports"
+			[1-feed.9]:
+				.text="Item 09 - streams"
+		[74-main]:
+			.vertical
+			.color=BG
+			.padding=0
+			.margin=0
+			.radius=0
+			[1-swap]:
+				.vertical
+				.color=None
+				.padding=0
+				.margin=0
+				[1-content.home]:
+					.vertical
+					.scroll
+					.color=None
+					.padding=0
+					.margin=0
+					[1-herotext]:
+						.color=ACCENT
+						.vertical
+						.align_y=center
+						.align_x=center
+						.padding=20
+						.radius=14
+						.margin=6
+						[1-big]:
+							.text="WELCOME"
+							.color=None
+							.text_color=LINE
+							.align_x=center
+							.padding=0
+						[1-sub]:
+							.text=calc(greeting("you"))
+							.color=None
+							.text_color=ACCENT_SOFT
+							.align_x=center
+							.padding=0
+					[1-counter]:
+						.vertical
+						.color=PANEL_LIGHT
+						.padding=18
+						.margin=6
+						.radius=14
+						[1-ctrLabel]:
+							.text="Clicks: 0"
+							.color=None
+							.text_color=ACCENT
+							.align_x=center
+							.padding=4
+						[1-ctrButton]:
+							.text="+1"
+							.color=ACCENT
+							.text_color=LINE
+							.padding=14
+							.margin=6
+							.radius=10
+							.align_x=center
+							.click=bump(ctrLabel)
+					[1-para]:
+						.color=PANEL
+						.padding=18
+						.margin=6
+						.radius=14
+						.text="SUI is a tiny declarative UI shell for raylib. This page demos text wrapping and vertical scrolling, the sidebar is a scroll container too, and the Player page shows a streamed video with a scrub bar, Play/Pause, an Open-file button and Mute."
+
+# ------ floating pages, wired in with set_children(swap, ...) ------
+
+[1-content.stats]:
+	.vertical
+	.scroll
+	.color=None
+	.padding=0
+	.margin=0
+	[1-statHeader]:
+		.color=None
+		.text_color=ACCENT
+		.padding=12
+		.text="Statistics"
+	[1-statRow]:
+		.horizontal
+		.color=None
+		.padding=0
+		[1-cell.a]:
+			.vertical
+			.color=PANEL
+			.padding=20
+			.margin=4
+			.radius=14
+			[1-n.a]:
+				.text="1.2M"
+				.color=None
+				.text_color=ACCENT
+				.align_x=center
+				.padding=0
+			[1-l.a]:
+				.text="Views"
+				.color=None
+				.text_color=MUTED
+				.align_x=center
+				.padding=0
+		[1-cell.b]:
+			.vertical
+			.color=PANEL
+			.padding=20
+			.margin=4
+			.radius=14
+			[1-n.b]:
+				.text="98%"
+				.color=None
+				.text_color=ACCENT
+				.align_x=center
+				.padding=0
+			[1-l.b]:
+				.text="Retention"
+				.color=None
+				.text_color=MUTED
+				.align_x=center
+				.padding=0
+		[1-cell.c]:
+			.vertical
+			.color=PANEL
+			.padding=20
+			.margin=4
+			.radius=14
+			[1-n.c]:
+				.text="40"
+				.color=None
+				.text_color=ACCENT
+				.align_x=center
+				.padding=0
+			[1-l.c]:
+				.text="Episodes"
+				.color=None
+				.text_color=MUTED
+				.align_x=center
+				.padding=0
+
+[1-content.player]:
+	.vertical
+	.scroll
+	.color=None
+	.padding=0
+	.margin=0
+	[1-ptitle]:
+		.color=None
+		.text_color=ACCENT_SOFT
+		.padding=12
+		.text="Now playing"
+	[1-pvideo]:
+		.video=assets/video.mp4
+		.video_fps=30
+		.texture_fit=contain
+		.color=LINE
+		.padding=0
+		.border=0
+		.radius=0
+		.margin=0
+	[1-pbar]:
+		.size=(0,22)
+		.color=PANEL_LIGHT
+		.border=1
+		.radius=11
+		.margin=8
+		.click=media_seek_click(pbar, pvideo)
+		.script=d_=media_dur(boxes["pvideo"]); p_=media_pos(boxes["pvideo"]); f_=(p_/d_) if d_ else 0.0; x_=int(box.rect.x)+3; y_=int(box.rect.y)+3; w_=int(box.rect.width)-6; h_=int(box.rect.height)-6; draw_rectangle(x_,y_,int(w_*f_),h_,Color(237,163,90,255)); draw_circle(x_+int(w_*f_),y_+h_//2,7,Color(254,232,217,255))
+	[1-pcontrols]:
+		.horizontal
+		.color=None
+		.padding=0
+		.margin=6
+		[1-pmp]:
+			.text=calc("Pause" if media_playing(boxes["pvideo"]) else "Play")
+			.color=ACCENT
+			.text_color=LINE
+			.padding=12
+			.margin=3
+			.radius=10
+			.align_x=center
+			.click=media_toggle(pvideo)
+		[1-popen]:
+			.text="Open file"
+			.color=ACCENT
+			.text_color=LINE
+			.padding=12
+			.margin=3
+			.radius=10
+			.align_x=center
+			.click=media_open(pvideo)
+		[1-pvol]:
+			.text="Mute"
+			.color=PANEL_LIGHT
+			.text_color=TEXT
+			.padding=12
+			.margin=3
+			.radius=10
+			.align_x=center
+			.click=media_vol_toggle(pvideo)
