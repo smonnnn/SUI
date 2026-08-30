@@ -22,6 +22,9 @@ def bump(box, d):
 
 def count():
     return "refraction  %d" % STATE["n"]
+
+def refn():
+    return STATE["n"]
 @end
 
 # ------ colors ------
@@ -76,7 +79,8 @@ DARK =          (10, 24, 26, 255)
 				.padding=6
 				.margin=8
 				.strength=25
-				.radius=40
+				.radius=14
+				.refrac=calc(refn())
 				.click=bump(a, 1)
 			[1-lens.b]:
 				.shader=shaders/glass.frag
@@ -84,7 +88,8 @@ DARK =          (10, 24, 26, 255)
 				.padding=6
 				.margin=8
 				.strength=25
-				.radius=40
+				.radius=14
+				.refrac=calc(refn())
 				.click=bump(b, 1)
 			[1-lens.c]:
 				.shader=shaders/glass.frag
@@ -92,7 +97,8 @@ DARK =          (10, 24, 26, 255)
 				.padding=6
 				.margin=8
 				.strength=25
-				.radius=40
+				.radius=14
+				.refrac=calc(refn())
 				.click=bump(c, 1)
 			[1-lens.d]:
 				.shader=shaders/glass.frag
@@ -100,38 +106,50 @@ DARK =          (10, 24, 26, 255)
 				.padding=6
 				.margin=8
 				.strength=25
-				.radius=40
+				.radius=14
+				.refrac=calc(refn())
 				.click=bump(d, 1)
 		[1-card]:
-			.color=(14, 26, 30, 120)
+			.shader=shaders/glass.frag
+			.color=None
+			.refrac=calc(refn())
 			.margin=14
 			.radius=14
 			.strength=50
 			.vertical
 			[1-card-body]:
 				.color=None
-				.text_color=TEXT
-				.text="Each lens is a live u_backdrop shader: it samples the wall of Waves behind it, bulges it and splits a prism at the rim. Move the mouse over one and the sheen follows. Click to refract a count through a python callback."
+				.text_color=(0, 0, 0, 240)
+				.text="Each lens is a live u_backdrop shader: it samples the wall of Waves behind it, bulges it and splits a prism at the rim. Move the mouse over one and the sheen follows. Click a lens, or use the pill buttons, to refract the counter through a python callback."
 				.padding=14
 				.margin=4
 			[1-counter]:
 				.horizontal
 				.color=(10, 24, 26, 140)
 				.padding=10
-				.margin=6
+				.margin=40
 				.radius=12
-				[1-reset]:
-					.text="RESET"
+				[1-minus]:
+					.text="-1"
 					.color=ACCENT
 					.text_color=DARK
 					.padding=12
 					.margin=4
 					.radius=10
 					.align_x=center
-					.click=bump(reset, -999)
-				[1-score]:
+					.click=bump(minus, -1)
+				[3-score]:
 					.color=None
 					.text_color=TEXT
 					.align_x=center
-					.strength=40
+					.align_y=center
 					.text=calc(count())
+				[1-plus]:
+					.text="+1"
+					.color=ACCENT
+					.text_color=DARK
+					.padding=12
+					.margin=4
+					.radius=10
+					.align_x=center
+					.click=bump(plus, 1)

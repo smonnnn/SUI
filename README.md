@@ -31,13 +31,14 @@ containers, textures/animations/video, and first-class Python integration
   RenderTexture every frame (a GPU-generated "video"), with `iTime`,
   `iResolution` and `iMouse` uniforms. Write your own `.frag` and point a box
   at it (`examples/shaders/*`).
-- **Glass / translucent boxes** — colours accept an alpha (`(r,g,b,a)`) so a box
-  can be translucent, and `shaders/glass.frag` backs a "lens" button: a glassy
-  highlight that follows the mouse over the scene behind it (the theme
-  `glassurf.txt` puts one over the Waves wallpaper). NOTE: the bundled raylib
-  build can't sample a texture from a *custom* fragment shader, so glass is
-  drawn as a translucent overlay and the scene shows through the alpha — not a
-  live refraction.
+- **Glass lens** — `shaders/glass.frag` is a real refracting lens (rounded-box
+  SDF that matches the box's `.radius`, Schlick fresnel, chromatic aberration,
+  gaussian blur, drop shadow). Any box whose shader declares `uniform float
+  u_glass;` becomes a "lens": the engine renders the scene *behind* it into an
+  offscreen texture and binds it as `texture0` (via `set_shader_value_texture`),
+  so the lens samples/refracts exactly what's underneath. The box's `.refrac`
+  attribute (e.g. `.refrac=calc(mycount())`) drives the refraction strength.
+  `glassurf.txt` puts a row of these over the Waves wallpaper.
 - **Hover / selected colors** — `.hover_color` and `.selected_color`.
 - **Shared attribute groups** — boxes named like `item.home` form an `item` group;
   attributes appearing on only one member are inherited by the rest, while
