@@ -2033,7 +2033,7 @@ def main():
     global _LAYOUT_DIR
     _LAYOUT_DIR = os.path.dirname(os.path.abspath(layout_file))
 
-    set_config_flags(ConfigFlags.FLAG_WINDOW_RESIZABLE)
+    set_config_flags(ConfigFlags.FLAG_WINDOW_RESIZABLE | ConfigFlags.FLAG_MSAA_4X_HINT)
     init_window(800, 450, "SUI")
     fps = 180
     set_target_fps(fps)
