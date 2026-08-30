@@ -14,10 +14,13 @@ import datetime
 def clk():
     return datetime.datetime.now().strftime("%H:%M:%S")
 
-STATE = {"n": 0}
+STATE = {"n": 0, "frost": 0.0, "opacity": 0.55}
+
+def clampv(v, lo, hi):
+    return max(lo, min(hi, v))
 
 def bump(box, d):
-    STATE["n"] += int(d)
+    STATE["n"] = int(clampv(STATE["n"] + int(d), 0, 60))
     return True
 
 def count():
@@ -25,6 +28,26 @@ def count():
 
 def refn():
     return STATE["n"]
+
+def set_frost(box, d):
+    STATE["frost"] = round(clampv(STATE["frost"] + float(d), 0.0, 1.0), 2)
+    return True
+
+def frost_val():
+    return STATE["frost"]
+
+def frost_label():
+    return "frost %d%%" % round(STATE["frost"] * 100)
+
+def set_opacity(box, d):
+    STATE["opacity"] = round(clampv(STATE["opacity"] + float(d), 0.1, 0.95), 2)
+    return True
+
+def opacity_val():
+    return STATE["opacity"]
+
+def opacity_label():
+    return "opacity %d%%" % round(STATE["opacity"] * 100)
 @end
 
 # ------ colors ------
@@ -47,7 +70,7 @@ DARK =          (10, 24, 26, 255)
 		.vertical
 		[1-topbar]:
 			.horizontal
-			.strength=8
+			.strength=1
 			.color=(14, 26, 30, 150)
 			.padding=12
 			.margin=0
@@ -67,61 +90,22 @@ DARK =          (10, 24, 26, 255)
 				.padding=0
 				.margin=0
 				.strength=30
-		[1-pad]:
-			.horizontal
-			.strength=24
-			.color=None
-			.padding=10
-			.margin=0
-			[1-lens.a]:
-				.shader=shaders/glass.frag
-				.color=None
-				.padding=6
-				.margin=8
-				.strength=25
-				.radius=14
-				.refrac=calc(refn())
-				.click=bump(a, 1)
-			[1-lens.b]:
-				.shader=shaders/glass.frag
-				.color=None
-				.padding=6
-				.margin=8
-				.strength=25
-				.radius=14
-				.refrac=calc(refn())
-				.click=bump(b, 1)
-			[1-lens.c]:
-				.shader=shaders/glass.frag
-				.color=None
-				.padding=6
-				.margin=8
-				.strength=25
-				.radius=14
-				.refrac=calc(refn())
-				.click=bump(c, 1)
-			[1-lens.d]:
-				.shader=shaders/glass.frag
-				.color=None
-				.padding=6
-				.margin=8
-				.strength=25
-				.radius=14
-				.refrac=calc(refn())
-				.click=bump(d, 1)
-		[1-card]:
+		[10-pad]:
+
+		[20-card]:
 			.shader=shaders/glass.frag
 			.color=None
 			.refrac=calc(refn())
+			.frost=calc(frost_val())
+			.opacity=calc(opacity_val())
 			.margin=14
 			.radius=14
-			.strength=50
 			.vertical
-			[1-card-body]:
+			[5-card-body]:
 				.color=None
 				.text_color=(0, 0, 0, 240)
-				.text="Each lens is a live u_backdrop shader: it samples the wall of Waves behind it, bulges it and splits a prism at the rim. Move the mouse over one and the sheen follows. Click a lens, or use the pill buttons, to refract the counter through a python callback."
-				.padding=14
+				.text="This shader inspired by apple's liquid glass reflects and refracts light just like a glass lens would. Just set the .shader="glass.frag"."
+				.padding=25
 				.margin=4
 			[1-counter]:
 				.horizontal
@@ -153,3 +137,70 @@ DARK =          (10, 24, 26, 255)
 					.radius=10
 					.align_x=center
 					.click=bump(plus, 1)
+		[8-controls]:
+			.vertical
+			.color=(14, 26, 30, 160)
+			.margin=14
+			.radius=14
+			.padding=10
+			[1-controls-title]:
+				.color=None
+				.text_color=ACCENT
+				.text="SETTINGS"
+				.padding=4
+			[1-row.frost]:
+				.horizontal
+				.color=None
+				.padding=6
+				[1-row.frost.label]:
+					.text="Frost"
+					.color=None
+					.text_color=TEXT
+					.strength=30
+					.align_y=center
+				[1-bs.fminus]:
+					.text="-"
+					.color=ACCENT
+					.text_color=DARK
+					.padding=10
+					.margin=4
+					.radius=10
+					.align_x=center
+					.click=set_frost(fminus, -0.12)
+				[1-frost.val]:
+					.color=None
+					.text_color=TEXT
+					.align_x=center
+					.strength=30
+					.text=calc(frost_label())
+				[1-bs.fplus]:
+					.text="+"
+					.click=set_frost(fplus, 0.12)
+			[1-row.opacity]:
+				.horizontal
+				.color=None
+				.padding=6
+				[1-row.opacity.label]:
+					.text="Opacity"
+					.color=None
+					.text_color=TEXT
+					.strength=30
+					.align_y=center
+				[1-bs.ominus]:
+					.text="-"
+					.color=ACCENT
+					.text_color=DARK
+					.padding=10
+					.margin=4
+					.radius=10
+					.align_x=center
+					.click=set_opacity(ominus, -0.10)
+				[1-opacity.val]:
+					.color=None
+					.text_color=TEXT
+					.align_x=center
+					.strength=30
+					.text=calc(opacity_label())
+				[1-bs.oplus]:
+					.text="+"
+					.click=set_opacity(oplus, 0.10)

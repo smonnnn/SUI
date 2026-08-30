@@ -12,6 +12,8 @@ uniform vec2 u_screenRes;   // window size, px
 uniform float u_glass;      // marker: declares this box as a lens
 uniform float u_corner;     // the box's corner radius (px)
 uniform float u_refract;    // counter-driven refraction strength (0..30+)
+uniform float u_frost;      // frosting amount (0 = clear lens .. 1 = milky glass)
+uniform float u_opacity;    // glass opacity (0..1)
 uniform sampler2D texture0;
 in vec2 fragTexCoord;
 in vec4 fragColor;
@@ -51,15 +53,15 @@ vec3 sampleScene(vec2 bx01) {
     return texture(texture0, toSceneUV(bx01)).rgb;
 }
 
-// small blur for the refracted backdrop (glassy depth)
-vec3 blurBG(vec2 bx01) {
+// small blur for the refracted backdrop (glassy depth); radius scales with frost
+vec3 blurBG(vec2 bx01, float blur) {
     vec3 o = vec3(0.0);
     float w = 0.0;
     for (int i = 0; i < 9; i++) {
         vec2 d = vec2(float(i % 3) - 1.0, float(i / 3) - 1.0);
         float f = 1.0 - 0.28 * dot(d, d);
         f = max(f, 0.0);
-        o += sampleScene(bx01 + d * 0.002).rgb * f;
+        o += sampleScene(bx01 + d * blur * (1.0 + blur)).rgb * f;
         w += f;
     }
     return o / max(w, 1e-4);
@@ -93,12 +95,14 @@ void main() {
         // Broad magnification: a gentle standing lens plus a wide, smooth bump
         // centred on the cursor. The gaussian is spread across the whole box so
         // it never reads as a small hard circle. The counter (u_refract) scales
-        // the overall refraction strength.
+        // the overall refraction strength; frosting scatters it into glass.
+        float frost = clamp(u_frost, 0.0, 1.0);
         vec2 off = uv - focal;
         float dist = length(off);
         float g = exp(-1.6 * dist * dist);
         float rf = clamp(u_refract, 0.0, 30.0) / 30.0;   // 0..1
         float mag = mix(0.94, 0.52, rf) - (0.12 + 0.22 * hover) * g;
+        mag = mix(mag, 0.92, frost * 0.6);               // frosted glass scatters (weaker lens)
         // a touch more chromatic split as the refraction builds
         float split = 0.0012 + 0.0022 * rf;
 
@@ -106,10 +110,11 @@ void main() {
         vec2 cuv = focal + off * mag;
         vec2 nbC = 0.5 * (cuv + 1.0);
 
+        float blur = 0.002 + frost * 0.018;
         vec3 col;
-        col.r = blurBG(nbC + vec2(split, 0.0)).r;
-        col.g = blurBG(nbC).g;
-        col.b = blurBG(nbC - vec2(split, 0.0)).b;
+        col.r = blurBG(nbC + vec2(split, 0.0), blur).r;
+        col.g = blurBG(nbC, blur).g;
+        col.b = blurBG(nbC - vec2(split, 0.0), blur).b;
         col = col * vec3(0.95, 0.98, 1.0) + vec3(0.10);
 
         // fresnel edge reflection (gradient of the rounded-box shape)
@@ -125,7 +130,12 @@ void main() {
         float hd = length(uv - mn);
         col += vec3(1.0, 0.99, 0.95) * hover * exp(-2.4 * hd * hd) * 0.16;
 
-        finalColor = vec4(col, u_glass);  // u_glass used -> keeps the marker alive
+        // frosted turbidity: milk the refraction, and let the scene read through
+        vec3 milky = vec3(0.84, 0.88, 0.94);
+        col = mix(col, milky, frost * 0.40);
+
+        float a = clamp((u_opacity > 0.0 ? u_opacity : 0.55), 0.0, 1.0) * u_glass;
+        finalColor = vec4(col, a);
     }
 
     // soft drop shadow hugging the lens base

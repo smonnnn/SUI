@@ -1260,7 +1260,8 @@ def _render_one_shader(box):
     # generic float uniform -> same-named box attribute (driven by calc()/script)
     for uname, attr in ((b"u_corner", "radius"), (b"u_refract", "refrac"),
                         (b"u_speed", "speed"), (b"u_pause", "pause"),
-                        (b"u_intensity", "intensity"), (b"u_fade", "fade")):
+                        (b"u_intensity", "intensity"), (b"u_fade", "fade"),
+                        (b"u_frost", "frost"), (b"u_opacity", "opacity")):
         loc = get_shader_location(sh, uname)
         if loc >= 0 and hasattr(box, attr):
             try:
