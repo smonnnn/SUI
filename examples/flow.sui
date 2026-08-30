@@ -4,7 +4,7 @@
 #  frame along a smooth noise field and deposits streaks, so particles flow and
 #  leave fading trails that recolour as they move. The sidebar controls it.
 #
-#  Run:  python box.py examples/flow.txt
+#  Run:  python box.py examples/flow.sui
 # ===========================================================================
 
 # ------ colors ------

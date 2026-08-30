@@ -2020,12 +2020,12 @@ def main():
     global _ROOT, _BOXES, _LAYOUT_FILE, hovering, selected
     layout_file = sys.argv[1] if len(sys.argv) > 1 else None
     if layout_file is None:
-        for cand in ("./examples/demo.txt", "./demo.txt", "./examples/test_layout_2.txt"):
+        for cand in ("./examples/demo.sui", "./demo.sui", "./examples/test_layout_2.sui"):
             if os.path.exists(cand):
                 layout_file = cand
                 break
         else:
-            layout_file = "./examples/demo.txt"
+            layout_file = "./examples/demo.sui"
     if not os.path.exists(layout_file):
         print(f"Layout not found: {layout_file}")
         sys.exit(1)

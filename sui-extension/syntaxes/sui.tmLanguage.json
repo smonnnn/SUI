@@ -1,0 +1,149 @@
+{
+  "name": "SUI",
+  "scopeName": "source.sui",
+  "fileTypes": ["sui", "box", "layout"],
+  "patterns": [
+    { "include": "#python-block" },
+    { "include": "#directives" },
+    { "include": "#box-header" },
+    { "include": "#attribute" },
+    { "include": "#color-def" },
+    { "include": "#comments" }
+  ],
+  "repository": {
+    "comments": {
+      "match": "#.*$",
+      "name": "comment.line.number-sign.sui"
+    },
+
+    "directives": {
+      "patterns": [
+        { "match": "^@import\\b[^\\n]*", "name": "meta.import.sui",
+          "captures": { "0": { "patterns": [
+            { "match": "^@import", "name": "keyword.control.directive.sui" },
+            { "match": "\\b[a-zA-Z_][\\w.]*", "name": "entity.name.module.sui" }
+          ] } } },
+        { "match": "^@end\\s*$", "name": "keyword.control.directive.sui" }
+      ]
+    },
+
+    "python-block": {
+      "begin": "^\\s*@python\\s*$",
+      "end": "^\\s*@end\\s*$",
+      "name": "meta.embedded.python.sui",
+      "beginCaptures": {
+        "0": { "name": "keyword.control.directive.sui" }
+      },
+      "endCaptures": {
+        "0": { "name": "keyword.control.directive.sui" }
+      },
+      "patterns": [
+        { "include": "#comments" },
+        { "include": "source.python" }
+      ]
+    },
+
+    "box-header": {
+      "begin": "^(\\s*)(\\[)(\\d*)(-)([\\w]+)((?:\\.[\\w]+)*)(\\])(:)",
+      "end": "$",
+      "beginCaptures": {
+        "1": { "name": "punctuation.whitespace.sui" },
+        "2": { "name": "punctuation.definition.box.sui" },
+        "3": { "name": "constant.numeric.strength.sui" },
+        "4": { "name": "punctuation.separator.sui" },
+        "5": { "name": "entity.name.box.sui" },
+        "6": { "name": "entity.name.group.sui" },
+        "7": { "name": "punctuation.definition.box.sui" },
+        "8": { "name": "punctuation.separator.sui" }
+      },
+      "patterns": [ { "include": "#inline-attribute" } ]
+    },
+
+    "inline-attribute": {
+      "match": "(\\s)(\\.)([\\w]+)(\\s*)(=)(\\s*)([^\\s]+)",
+      "captures": {
+        "2": { "name": "punctuation.separator.sui" },
+        "3": { "name": "support.type.property-name.sui" },
+        "5": { "name": "punctuation.separator.sui" },
+        "7": { "patterns": [ { "include": "#value" } ] }
+      }
+    },
+
+    "attribute": {
+      "patterns": [
+        {
+          "match": "^(\\s*)(\\.)([\\w]+)(\\s*)(=)(\\s*)(.+)$",
+          "captures": {
+            "2": { "name": "punctuation.separator.sui" },
+            "3": { "name": "support.type.property-name.sui" },
+            "5": { "name": "punctuation.separator.sui" },
+            "7": { "patterns": [ { "include": "#value" } ] }
+          }
+        },
+        {
+          "match": "^(\\s*)(\\.)([\\w]+)\\s*$",
+          "captures": {
+            "2": { "name": "punctuation.separator.sui" },
+            "3": { "name": "support.type.property-name.sui" }
+          }
+        }
+      ]
+    },
+
+    "color-def": {
+      "match": "^(\\s*)([a-zA-Z_][\\w]*)(\\s*)(=)(\\s*)(\\([\\d,\\s]*\\))",
+      "captures": {
+        "2": { "name": "constant.other.color.sui" },
+        "4": { "name": "punctuation.separator.sui" },
+        "6": { "name": "constant.other.color.sui" }
+      }
+    },
+
+    "value": {
+      "patterns": [
+        { "include": "#string" },
+        { "include": "#color-tuple" },
+        { "include": "#number" },
+        { "include": "#language-constants" },
+        { "include": "#function-call" },
+        { "include": "#identifier" }
+      ]
+    },
+
+    "string": {
+      "match": "\"([^\"]*)\"",
+      "name": "string.quoted.double.sui",
+      "captures": {
+        "0": { "name": "string.quoted.double.sui" }
+      }
+    },
+
+    "color-tuple": {
+      "match": "\\([\\d,\\s]*\\d[\\d,\\s]*\\)",
+      "name": "constant.other.color.sui"
+    },
+
+    "number": {
+      "match": "-?\\d+(?:\\.\\d+)?",
+      "name": "constant.numeric.sui"
+    },
+
+    "language-constants": {
+      "match": "\\b(True|False|None)\\b",
+      "name": "constant.language.sui"
+    },
+
+    "function-call": {
+      "match": "([\\w.]+)(\\s*)(\\()",
+      "captures": {
+        "1": { "name": "entity.name.function.sui" },
+        "3": { "name": "punctuation.definition.arguments.sui" }
+      }
+    },
+
+    "identifier": {
+      "match": "[a-zA-Z_][\\w.']*",
+      "name": "variable.other.sui"
+    }
+  }
+}

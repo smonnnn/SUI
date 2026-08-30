@@ -46,7 +46,7 @@ containers, textures/animations/video, and first-class Python integration
   so the lens samples/refracts exactly what's underneath. The box's `.refrac`,
   `.frost` and `.opacity` attributes (e.g. `.refrac=calc(mycount())`) drive the
   refraction strength, frosting (blur + milky turbidity) and alpha.
-  `glassurf.txt` puts one over the Waves wallpaper with -/+ controls for each.
+  `glassurf.sui` puts one over the Waves wallpaper with -/+ controls for each.
 - **Hover / selected colors** — `.hover_color` and `.selected_color`.
 - **Shared attribute groups** — boxes named like `item.home` form an `item` group;
   attributes appearing on only one member are inherited by the rest, while
@@ -77,10 +77,10 @@ containers, textures/animations/video, and first-class Python integration
 the procedural demo artwork (`assets/`), and launches the demo:
 
 ```bash
-python box.py examples/demo.txt
+python box.py examples/demo.sui
 ```
 
-To run a different layout: `python box.py path/to/layout.txt`
+To run a different layout: `python box.py path/to/layout.sui`
 
 ### Manual setup
 
@@ -89,7 +89,7 @@ python3 -m venv venv
 source venv/bin/activate
 python -m pip install raylib==6.0.1.0 imageio-ffmpeg
 python make_assets.py
-python box.py examples/demo.txt
+python box.py examples/demo.sui
 ```
 
 ---
@@ -102,21 +102,22 @@ parser.py         the layout-language parser (boxes, attributes, @python/@import
 make_assets.py    generates the demo artwork (logo, animation, video frames, .mp4)
 suifx.py          an example @import helper module
 setup.sh          venv + deps + asset generation + run
+sui-extension/    a VS Code extension: syntax highlighting + snippets for .sui
 README.md
 examples/
-  demo.txt        the main showcase layout (sidebar, pages, video player)
-  flow.txt        "Flow Field" — a GPU flow field via frame feedback (fbm trails)
-  shader.txt      "Shader Lab" — GPU fragment shaders rendered to a texture
-  shadertop.txt   a live shader wallpaper behind translucent widgets
-  glassurf.txt    "Lens Control" — glassy lenses over the Waves wallpaper
+  demo.sui        the main showcase layout (sidebar, pages, video player)
+  flow.sui        "Flow Field" — a GPU flow field via frame feedback (fbm trails)
+  shader.sui      "Shader Lab" — GPU fragment shaders rendered to a texture
+  shadertop.sui   a live shader wallpaper behind translucent widgets
+  glassurf.sui    "Lens Control" — glassy lenses over the Waves wallpaper
   shaders/        shader sources (plasma, swirl, mandelbrot, waves, glass, frosted, flow)
-  test_layout_2.txt  a minimal original example
+  test_layout_2.sui  a minimal original example
   assets/         final artwork committed here: logo.png + video.mp4
   shaders/        .frag shaders (plasma, swirl, mandelbrot)
 ```
 
 Media paths in a layout are resolved relative to the layout file, so
-`examples/demo.txt` can refer to `assets/logo.png` and it points at
+`examples/demo.sui` can refer to `assets/logo.png` and it points at
 `examples/assets/logo.png`.
 
 ---

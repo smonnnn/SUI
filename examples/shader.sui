@@ -3,7 +3,7 @@
 #  A full-screen procedural shader rendered to a texture each frame (i.e.
 #  GPU-generated "video"). Click the buttons to switch shaders.
 #
-#  Run:  python box.py examples/shader.txt
+#  Run:  python box.py examples/shader.sui
 # ===========================================================================
 
 @python

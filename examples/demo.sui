@@ -6,7 +6,7 @@
 #  box keeps its own). Here `item.home` holds the shared styling for all the
 #  nav buttons; `feed.0` holds the shared styling for the feed list.
 #
-#  Run:  python box.py demo.txt
+#  Run:  python box.py demo.sui
 # ===========================================================================
 
 # ------ colors ------

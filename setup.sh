@@ -22,4 +22,4 @@ fi
 python make_assets.py
 
 # Launch the demo UI (pass a layout path as $1 to use a different one).
-python box.py "${1:-examples/demo.txt}"
+python box.py "${1:-examples/demo.sui}"

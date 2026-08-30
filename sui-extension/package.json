@@ -1,0 +1,36 @@
+{
+  "name": "sui-language",
+  "displayName": "SUI — box layout language",
+  "description": "Syntax highlighting, language config and snippets for SUI's declarative box layout language (.sui).",
+  "version": "0.1.0",
+  "publisher": "sui",
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": ["Programming Languages", "Snippets"],
+  "keywords": ["sui", "raylib", "layout", "ui", "declarative"],
+  "license": "MIT",
+  "contributes": {
+    "languages": [
+      {
+        "id": "sui",
+        "aliases": ["SUI", "sui layout", "box"],
+        "extensions": [".sui", ".box", ".layout"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "sui",
+        "scopeName": "source.sui",
+        "path": "./syntaxes/sui.tmLanguage.json"
+      }
+    ],
+    "snippets": [
+      {
+        "language": "sui",
+        "path": "./snippets/sui.code-snippets"
+      }
+    ]
+  }
+}

@@ -4,7 +4,7 @@
 #  translucent box on top of the shader, so the animation shows through.
 #  buttons call python callbacks; the title bar has a live clock.
 #
-#  Run:  python box.py examples/shadertop.txt
+#  Run:  python box.py examples/shadertop.sui
 # ===========================================================================
 
 @python

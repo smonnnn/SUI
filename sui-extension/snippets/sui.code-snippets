@@ -1,0 +1,121 @@
+{
+  "Root layout": {
+    "prefix": "sui-root",
+    "body": [
+      "[1-root]:",
+      "\t.vertical",
+      "\t.margin=0",
+      "\t.padding=0",
+      "\t[1-${1:page}]:",
+      "\t\t${0}",
+      ""
+    ],
+    "description": "A root vertical container"
+  },
+  "Container": {
+    "prefix": "sui-box",
+    "body": [
+      "[${1:1}-${2:name}]:",
+      "\t.${3:vertical}",
+      "\t.color=${4:BG}",
+      "\t.padding=${5:10}",
+      "\t.margin=${6:4}",
+      "\t.radius=${7:10}",
+      "\t${0}"
+    ],
+    "description": "A plain container box"
+  },
+  "Text box": {
+    "prefix": "sui-text",
+    "body": [
+      "[${1:1}-${2:label}]:",
+      "\t.text=\"${3:text}\"",
+      "\t.color=None",
+      "\t.text_color=${4:TEXT}",
+      "\t.padding=${5:6}"
+    ],
+    "description": "A text-only box"
+  },
+  "Button": {
+    "prefix": "sui-button",
+    "body": [
+      "[${1:1}-${2:name}]:",
+      "\t.text=\"${3:Click}\"",
+      "\t.color=${4:ACCENT}",
+      "\t.text_color=${5:DARK}",
+      "\t.padding=14",
+      "\t.margin=4",
+      "\t.radius=10",
+      "\t.align_x=center",
+      "\t.click=${6:handler}(${2:name}, 1)"
+    ],
+    "description": "A clickable button"
+  },
+  "Color definition": {
+    "prefix": "sui-color",
+    "body": ["${1:NAME} = (${2:r}, ${3:g}, ${4:b}, ${5:255})"],
+    "description": "Define a named color"
+  },
+  "Python block": {
+    "prefix": "sui-python",
+    "body": [
+      "@python",
+      "${1:# state + helpers}",
+      "def ${2:handler}(box, d):",
+      "\treturn True",
+      "@end"
+    ],
+    "description": "Embedded Python block"
+  },
+  "Shader box": {
+    "prefix": "sui-shader",
+    "body": [
+      "[${1:1}-${2:name}]:",
+      "\t.shader=${3:shaders/glass.frag}",
+      "\t.color=None",
+      "\t.padding=0",
+      "\t.margin=0",
+      "\t.radius=${4:14}",
+      "\t${0}"
+    ],
+    "description": "A box backed by a fragment shader"
+  },
+  "Media box": {
+    "prefix": "sui-media",
+    "body": [
+      "[${1:1}-${2:name}]:",
+      "\t.${3|texture,anim,video|}=${4:assets/file}",
+      "\t.color=None",
+      "\t.border=2",
+      "\t.texture_fit=${5|cover,contain,stretch,tile,crop|}",
+      "\t${0}"
+    ],
+    "description": "A box showing a texture / animation / video"
+  },
+  "Shared group": {
+    "prefix": "sui-group",
+    "body": [
+      "[${1:1}-${2:group}.${3:a}]:",
+      "\t${4:# shared styling on one member}",
+      "\t.text=\"${5:First}\"",
+      "[${1:1}-${2:group}.${6:b}]:",
+      "\t.text=\"${7:Second}\"",
+      "\t${0}"
+    ],
+    "description": "A shared-attribute group of boxes"
+  },
+  "Scroll container": {
+    "prefix": "sui-scroll",
+    "body": [
+      "[${1:1}-${2:name}]:",
+      "\t.vertical",
+      "\t.scroll",
+      "\t.color=${3:PANEL}",
+      "\t.padding=10",
+      "\t[1-item.a]:",
+      "\t\t.text=\"${4:item}\"",
+      "\t\t${0}"
+    ],
+    "description": "A scrollable vertical container"
+  }
+}

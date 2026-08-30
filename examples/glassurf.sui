@@ -5,7 +5,7 @@
 #  sheen that tracks the mouse). Clicking a lens bumps the counter via a python
 #  callback.
 #
-#  Run:  python box.py examples/glassurf.txt
+#  Run:  python box.py examples/glassurf.sui
 # ===========================================================================
 
 @python
@@ -68,30 +68,25 @@ DARK =          (10, 24, 26, 255)
 		.border=0
 		.radius=0
 		.vertical
-		[1-topbar]:
+		[2-topbar]:
 			.horizontal
-			.strength=1
 			.color=(14, 26, 30, 150)
 			.padding=12
 			.margin=0
 			.radius=0
-			[1-title]:
+			[50-title]:
 				.color=None
 				.text_color=TEXT
 				.text="LENS CONTROL"
 				.padding=0
 				.margin=0
-				.strength=50
-			[1-clock]:
+			[30-clock]:
 				.color=None
 				.text_color=ACCENT
 				.text=calc(clk())
 				.align_x=right
 				.padding=0
 				.margin=0
-				.strength=30
-		[10-pad]:
-
 		[20-card]:
 			.shader=shaders/glass.frag
 			.color=None
@@ -122,20 +117,18 @@ DARK =          (10, 24, 26, 255)
 				.horizontal
 				.color=None
 				.padding=6
-				[1-row.refract.label]:
+				[30-row.refract.label]:
 					.text="Refraction"
 					.color=None
 					.text_color=TEXT
-					.strength=30
 					.align_y=center
 				[5-bs.rminus]:
 					.text="-"
 					.click=bump(rminus, -1)
-				[1-refract.val]:
+				[30-refract.val]:
 					.color=None
 					.text_color=TEXT
 					.align_x=center
-					.strength=30
 					.text=calc(count())
 				[5-bs.rplus]:
 					.text="+"
@@ -144,20 +137,18 @@ DARK =          (10, 24, 26, 255)
 				.horizontal
 				.color=None
 				.padding=6
-				[1-row.frost.label]:
+				[30-row.frost.label]:
 					.text="Frost"
 					.color=None
 					.text_color=TEXT
-					.strength=30
 					.align_y=center
 				[5-bs.fminus]:
 					.text="-"
 					.click=set_frost(fminus, -0.12)
-				[-frost.val]:
+				[30-frost.val]:
 					.color=None
 					.text_color=TEXT
 					.align_x=center
-					.strength=30
 					.text=calc(frost_label())
 				[5-bs.fplus]:
 					.text="+"
@@ -170,22 +161,20 @@ DARK =          (10, 24, 26, 255)
 					.text="Opacity"
 					.color=None
 					.text_color=TEXT
-					.strength=30
 					.align_y=center
 				[5-bs.ominus]:
 					.text="-"
 					.color=ACCENT
 					.text_color=DARK
-					.padding=10
+					.padding=0
 					.margin=4
 					.radius=10
 					.align_x=center
 					.click=set_opacity(ominus, -0.10)
-				[5-opacity.val]:
+				[30-opacity.val]:
 					.color=None
 					.text_color=TEXT
 					.align_x=center
-					.strength=30
 					.text=calc(opacity_label())
 				[5-bs.oplus]:
 					.text="+"
