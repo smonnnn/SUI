@@ -107,36 +107,6 @@ DARK =          (10, 24, 26, 255)
 				.text="This shader inspired by apple's liquid glass reflects and refracts light just like a glass lens would. Just set the .shader="glass.frag"."
 				.padding=25
 				.margin=4
-			[1-counter]:
-				.horizontal
-				.color=(10, 24, 26, 140)
-				.padding=10
-				.margin=40
-				.radius=12
-				[1-minus]:
-					.text="-1"
-					.color=ACCENT
-					.text_color=DARK
-					.padding=12
-					.margin=4
-					.radius=10
-					.align_x=center
-					.click=bump(minus, -1)
-				[3-score]:
-					.color=None
-					.text_color=TEXT
-					.align_x=center
-					.align_y=center
-					.text=calc(count())
-				[1-plus]:
-					.text="+1"
-					.color=ACCENT
-					.text_color=DARK
-					.padding=12
-					.margin=4
-					.radius=10
-					.align_x=center
-					.click=bump(plus, 1)
 		[8-controls]:
 			.vertical
 			.color=(14, 26, 30, 160)
@@ -148,6 +118,28 @@ DARK =          (10, 24, 26, 255)
 				.text_color=ACCENT
 				.text="SETTINGS"
 				.padding=4
+			[1-row.refract]:
+				.horizontal
+				.color=None
+				.padding=6
+				[1-row.refract.label]:
+					.text="Refraction"
+					.color=None
+					.text_color=TEXT
+					.strength=30
+					.align_y=center
+				[5-bs.rminus]:
+					.text="-"
+					.click=bump(rminus, -1)
+				[1-refract.val]:
+					.color=None
+					.text_color=TEXT
+					.align_x=center
+					.strength=30
+					.text=calc(count())
+				[5-bs.rplus]:
+					.text="+"
+					.click=bump(rplus, 1)
 			[1-row.frost]:
 				.horizontal
 				.color=None
