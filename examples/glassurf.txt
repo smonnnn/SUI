@@ -158,35 +158,29 @@ DARK =          (10, 24, 26, 255)
 					.text_color=TEXT
 					.strength=30
 					.align_y=center
-				[1-bs.fminus]:
+				[5-bs.fminus]:
 					.text="-"
-					.color=ACCENT
-					.text_color=DARK
-					.padding=10
-					.margin=4
-					.radius=10
-					.align_x=center
 					.click=set_frost(fminus, -0.12)
-				[1-frost.val]:
+				[-frost.val]:
 					.color=None
 					.text_color=TEXT
 					.align_x=center
 					.strength=30
 					.text=calc(frost_label())
-				[1-bs.fplus]:
+				[5-bs.fplus]:
 					.text="+"
 					.click=set_frost(fplus, 0.12)
 			[1-row.opacity]:
 				.horizontal
 				.color=None
 				.padding=6
-				[1-row.opacity.label]:
+				[30-row.opacity.label]:
 					.text="Opacity"
 					.color=None
 					.text_color=TEXT
 					.strength=30
 					.align_y=center
-				[1-bs.ominus]:
+				[5-bs.ominus]:
 					.text="-"
 					.color=ACCENT
 					.text_color=DARK
@@ -195,12 +189,12 @@ DARK =          (10, 24, 26, 255)
 					.radius=10
 					.align_x=center
 					.click=set_opacity(ominus, -0.10)
-				[1-opacity.val]:
+				[5-opacity.val]:
 					.color=None
 					.text_color=TEXT
 					.align_x=center
 					.strength=30
 					.text=calc(opacity_label())
-				[1-bs.oplus]:
+				[5-bs.oplus]:
 					.text="+"
 					.click=set_opacity(oplus, 0.10)
