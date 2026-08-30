@@ -96,7 +96,7 @@ DARK =          (10, 24, 26, 255)
 			.margin=14
 			.radius=14
 			.vertical
-			[5-card-body]:
+			[5-cardbody]:
 				.color=None
 				.text_color=(0, 0, 0, 240)
 				.text="This shader inspired by apple's liquid glass reflects and refracts light just like a glass lens would. Just set the .shader="glass.frag"."
@@ -108,7 +108,7 @@ DARK =          (10, 24, 26, 255)
 			.margin=14
 			.radius=14
 			.padding=10
-			[1-controls-title]:
+			[1-controls.title]:
 				.color=None
 				.text_color=ACCENT
 				.text="SETTINGS"
@@ -117,52 +117,12 @@ DARK =          (10, 24, 26, 255)
 				.horizontal
 				.color=None
 				.padding=6
-				[30-row.refract.label]:
+				[30-label.refract]:
 					.text="Refraction"
 					.color=None
 					.text_color=TEXT
 					.align_y=center
-				[5-bs.rminus]:
-					.text="-"
-					.click=bump(rminus, -1)
-				[30-refract.val]:
-					.color=None
-					.text_color=TEXT
-					.align_x=center
-					.text=calc(count())
-				[5-bs.rplus]:
-					.text="+"
-					.click=bump(rplus, 1)
-			[1-row.frost]:
-				.horizontal
-				.color=None
-				.padding=6
-				[30-row.frost.label]:
-					.text="Frost"
-					.color=None
-					.text_color=TEXT
-					.align_y=center
-				[5-bs.fminus]:
-					.text="-"
-					.click=set_frost(fminus, -0.12)
-				[30-frost.val]:
-					.color=None
-					.text_color=TEXT
-					.align_x=center
-					.text=calc(frost_label())
-				[5-bs.fplus]:
-					.text="+"
-					.click=set_frost(fplus, 0.12)
-			[1-row.opacity]:
-				.horizontal
-				.color=None
-				.padding=6
-				[30-row.opacity.label]:
-					.text="Opacity"
-					.color=None
-					.text_color=TEXT
-					.align_y=center
-				[5-bs.ominus]:
+				[5-minus.refract]:
 					.text="-"
 					.color=ACCENT
 					.text_color=DARK
@@ -170,12 +130,39 @@ DARK =          (10, 24, 26, 255)
 					.margin=4
 					.radius=10
 					.align_x=center
-					.click=set_opacity(ominus, -0.10)
-				[30-opacity.val]:
+					.align_y=center
+					.click=bump(minus.refract, -1)
+				[30-val.refract]:
 					.color=None
 					.text_color=TEXT
 					.align_x=center
-					.text=calc(opacity_label())
-				[5-bs.oplus]:
+					.align_y=center
+					.text=calc(count())
+				[5-plus.refract]:
 					.text="+"
-					.click=set_opacity(oplus, 0.10)
+					.color=ACCENT
+					.text_color=DARK
+					.padding=0
+					.margin=4
+					.radius=10
+					.align_x=center
+					.align_y=center
+					.click=bump(rplus, 1)
+			[1-row.frost]:
+				[30-label.frost]:
+					.text="Frost"
+				[5-minus.frost]:
+					.click=set_frost(minus.frost, -0.12)
+				[30-val.frost]:
+					.text=calc(frost_label())
+				[5-plus.frost]:
+					.click=set_frost(plus.frost, 0.12)
+			[1-row.opacity]:
+				[30-label.opacity]:
+					.text="Opacity"
+				[5-minus.opacity]:
+					.click=set_opacity(minus.opacity, -0.10)
+				[30-val.opacity]:
+					.text=calc(opacity_label())
+				[5-plus.opacity]:
+					.click=set_opacity(plus.opacity, 0.10)
