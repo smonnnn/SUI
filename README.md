@@ -103,6 +103,7 @@ make_assets.py    generates the demo artwork (logo, animation, video frames, .mp
 suifx.py          an example @import helper module
 setup.sh          venv + deps + asset generation + run
 sui-extension/    a VS Code extension: syntax highlighting + snippets for .sui
+GUIDE.md          a short guide to writing .sui interfaces (boxes, attributes, Python, groups)
 README.md
 examples/
   demo.sui        the main showcase layout (sidebar, pages, video player)

@@ -147,7 +147,7 @@ DARK =          (10, 24, 26, 255)
 					.radius=10
 					.align_x=center
 					.align_y=center
-					.click=bump(rplus, 1)
+					.click=bump(plus.refract, 1)
 			[1-row.frost]:
 				[30-label.frost]:
 					.text="Frost"
