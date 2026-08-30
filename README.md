@@ -31,6 +31,13 @@ containers, textures/animations/video, and first-class Python integration
   RenderTexture every frame (a GPU-generated "video"), with `iTime`,
   `iResolution` and `iMouse` uniforms. Write your own `.frag` and point a box
   at it (`examples/shaders/*`).
+- **Frame feedback (ping-pong)** — any shader that declares `uniform float
+  u_feedback;` is rendered with framebuffer feedback: the engine keeps two
+  textures per box, binds the previous frame as `texture0`, then swaps, so a
+  shader can read its own last frame and accumulate (trails, flow fields, smoke,
+  sand, growth effects). Generic `u_<name>` uniforms can be driven by matching
+  box attributes (`.speed=calc(…)`, `.fade=…`, etc.). `shaders/flow.frag` uses
+  this for a GPU flow field with fading, hue-shifting trails.
 - **Glass lens** — `shaders/glass.frag` is a real refracting lens (rounded-box
   SDF that matches the box's `.radius`, Schlick fresnel, chromatic aberration,
   gaussian blur, drop shadow). Any box whose shader declares `uniform float
@@ -97,11 +104,11 @@ setup.sh          venv + deps + asset generation + run
 README.md
 examples/
   demo.txt        the main showcase layout (sidebar, pages, video player)
-  flow.txt        "Flow Field" — a generative particle simulation (script())
+  flow.txt        "Flow Field" — a GPU flow field via frame feedback (fbm trails)
   shader.txt      "Shader Lab" — GPU fragment shaders rendered to a texture
   shadertop.txt   a live shader wallpaper behind translucent widgets
   glassurf.txt    "Lens Control" — glassy lenses over the Waves wallpaper
-  shaders/        shader sources (plasma, swirl, mandelbrot, waves, glass, frosted)
+  shaders/        shader sources (plasma, swirl, mandelbrot, waves, glass, frosted, flow)
   test_layout_2.txt  a minimal original example
   assets/         final artwork committed here: logo.png + video.mp4
   shaders/        .frag shaders (plasma, swirl, mandelbrot)

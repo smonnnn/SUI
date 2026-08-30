@@ -1230,11 +1230,11 @@ def _render_one_shader(box):
         loc_g = get_shader_location(sh, b"u_glass")
         loc_sr = get_shader_location(sh, b"u_screenRes")
         loc_o = get_shader_location(sh, b"u_origin")
-        loc_c = get_shader_location(sh, b"u_corner")
-        loc_rf = get_shader_location(sh, b"u_refract")
+        loc_fb = get_shader_location(sh, b"u_feedback")
     except Exception:
-        loc_t = loc_r = loc_m = loc_g = loc_sr = loc_o = loc_c = loc_rf = -1
-    box._glass = loc_g >= 0   # 'u_glass' marks a backdrop-sampling lens box
+        loc_t = loc_r = loc_m = loc_g = loc_sr = loc_o = loc_fb = -1
+    box._glass = loc_g >= 0           # 'u_glass': backdrop-sampling lens box
+    box._feedback = loc_fb >= 0        # 'u_feedback': ping-pong frame-feedback box
     tf = _pr.ffi.new("float *", get_time())
     rv = _pr.ffi.new("float[2]", [float(wt), float(ht)])
     mp = get_mouse_position()
@@ -1248,18 +1248,57 @@ def _render_one_shader(box):
     if loc_g >= 0:
         gv = _pr.ffi.new("float *", 1.0 if box._glass else 0.0)
         set_shader_value(sh, loc_g, gv, 0)
+    if loc_fb >= 0:
+        fv = _pr.ffi.new("float *", 1.0 if box._feedback else 0.0)
+        set_shader_value(sh, loc_fb, fv, 0)
     if loc_sr >= 0:
         sv = _pr.ffi.new("float[2]", [float(get_screen_width()), float(get_screen_height())])
         set_shader_value_v(sh, loc_sr, sv, 1, 1)
     if loc_o >= 0:
         ov = _pr.ffi.new("float[2]", [float(x), float(y)])
         set_shader_value_v(sh, loc_o, ov, 1, 1)
-    if loc_c >= 0:
-        cv = _pr.ffi.new("float *", float(getattr(box, "radius", 0) or 0))
-        set_shader_value(sh, loc_c, cv, 0)
-    if loc_rf >= 0:
-        rfv = _pr.ffi.new("float *", float(getattr(box, "refrac", 0) or 0))
-        set_shader_value(sh, loc_rf, rfv, 0)
+    # generic float uniform -> same-named box attribute (driven by calc()/script)
+    for uname, attr in ((b"u_corner", "radius"), (b"u_refract", "refrac"),
+                        (b"u_speed", "speed"), (b"u_pause", "pause"),
+                        (b"u_intensity", "intensity"), (b"u_fade", "fade")):
+        loc = get_shader_location(sh, uname)
+        if loc >= 0 and hasattr(box, attr):
+            try:
+                set_shader_value(sh, loc, _pr.ffi.new("float *", float(getattr(box, attr))), 0)
+            except Exception:
+                pass
+
+    if box._feedback:
+        # Ping-pong feedback: render the shader into a scratch texture, sampling
+        # the previous frame (cur) as 'texture0' (trail accumulation), then swap
+        # so the fresh frame becomes the blit target for next frame.
+        cur = box._shader_rt
+        scratch = getattr(box, "_fb_rt", None)
+        if scratch is None or scratch.texture.width != wt or scratch.texture.height != ht:
+            if scratch is not None:
+                try:
+                    unload_render_texture(scratch)
+                except Exception:
+                    pass
+            scratch = load_render_texture(wt, ht)
+            box._fb_rt = scratch
+            _SHADER_RTS.append(scratch)
+        begin_texture_mode(scratch)
+        clear_background(BLACK)
+        loc0 = get_shader_location(sh, b"texture0")
+        if loc0 >= 0:
+            try:
+                set_shader_value_texture(sh, loc0, cur.texture)
+            except Exception as e:
+                print("[SUI] feedback texture bind failed:", e)
+        begin_shader_mode(sh)
+        draw_texture_pro(cur.texture, Rectangle(0, 0, float(wt), float(ht)),
+                         Rectangle(0, 0, float(wt), float(ht)), Vector2(0, 0), 0, WHITE)
+        end_shader_mode()
+        end_texture_mode()
+        box._shader_rt, box._fb_rt = scratch, cur
+        return
+
     begin_texture_mode(rt)
     clear_background(BLANK)
     if box._glass and _SCENE_RT is not None:
