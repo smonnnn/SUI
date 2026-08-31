@@ -35,6 +35,19 @@ def bump(box, d):
 
 def count():
     return "Clicks: %d" % STATE["n"]
+
+# UI state for the responsive sidebar toggle
+UI = {"side": True}
+
+def toggle_side(box):
+    UI["side"] = not UI["side"]
+    return True
+
+def side_open():
+    return UI["side"]
+
+def side_label():
+    return "Hide" if UI["side"] else "Show"
 @end
 
 # ------ default styling inherited by every box ------
@@ -55,11 +68,23 @@ def count():
 	.margin=0
 	.padding=0
 	.radius=0
+	# header drops off on narrow windows
 	[14-header]:
-		.color=PANEL
 		.horizontal
+		.color=PANEL
 		.padding=10
 		.radius=0
+		.hidden=calc(width < 700)
+		[1-toggle]:
+			.text=calc(side_label())
+			.color=PANEL_LIGHT
+			.hover_color=ACCENT
+			.text_color=TEXT
+			.padding=12
+			.margin=4
+			.radius=10
+			.align_x=center
+			.click=toggle_side(toggle)
 		[1-brand]:
 			.texture=assets/logo.png
 			.texture_fit=contain
@@ -89,7 +114,8 @@ def count():
 			.border=2
 			.strength=28
 	[86-body]:
-		.horizontal
+		# side-by-side on wide windows; stacks vertically when narrow
+		.horizontal=calc(width > 860)
 		.padding=0
 		.margin=0
 		.radius=0
@@ -100,6 +126,7 @@ def count():
 			.padding=8
 			.margin=0
 			.radius=0
+			.hidden=calc(not side_open())
 			[1-note]:
 				.color=None
 				.text_color=MUTED

@@ -94,6 +94,7 @@ def flow_status():
 		.horizontal
 		.padding=8
 		.radius=0
+		.hidden=calc(width < 700)
 		[1-head-title]:
 			.color=None
 			.vertical
@@ -118,7 +119,7 @@ def flow_status():
 			.border=2
 			.strength=22
 	[88-body]:
-		.horizontal
+		.horizontal=calc(width > 860)
 		.padding=0
 		.margin=0
 		.radius=0

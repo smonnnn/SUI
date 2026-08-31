@@ -244,7 +244,7 @@ The engine gives every shader these optional parameters — declare any you need
   ```
 
 - `u_background` *(sampler2D)* — the scene *behind* this box (rendered into a
-  backdrop pass). Declaring it makes the box a "lens" that samples/refracts
+  backdrop pass). Declaring it makes the box a "lens" that samples
   what's underneath.
 - `u_prev` *(sampler2D)* — this box's own previous frame (ping-pong feedback),
   for flow fields / trails (`shaders/flow.frag`).

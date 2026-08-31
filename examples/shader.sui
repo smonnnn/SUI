@@ -55,6 +55,7 @@ LINE =          (6, 46, 48, 255)
 		.horizontal
 		.padding=10
 		.radius=0
+		.hidden=calc(width < 700)
 		[1-h-title]:
 			.color=None
 			.vertical
@@ -81,7 +82,7 @@ LINE =          (6, 46, 48, 255)
 			.padding=10
 			.strength=18
 	[86-body]:
-		.horizontal
+		.horizontal=calc(width > 860)
 		.padding=0
 		.margin=0
 		.radius=0
