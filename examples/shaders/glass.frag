@@ -2,19 +2,18 @@
 // "Glass Lens" for SUI — a real refracting lens over whatever is behind the box.
 // Based on a Shadertoy glass-lens shader (IQ-style superellipse SDF + Schlick
 // fresnel + chromatic aberration + gaussian blur + drop shadow). Adapted so the
-// refracted background is 'texture0': the box's own screen footprint of the
+// refracted background is 'u_background': the box's own screen footprint of the
 // scene rendered without the lens (see box.py's backdrop pass).
 uniform vec2 iResolution;   // this box's size (px)
 uniform float iTime;
 uniform vec2 iMouse;        // box-relative (px, y down)
 uniform vec2 u_origin;      // this box's top-left, screen px
 uniform vec2 u_screenRes;   // window size, px
-uniform float u_sample_background;  // marker: this shader samples the scene behind it
 uniform float u_corner;     // the box's corner radius (px)
 uniform float u_refract;    // counter-driven refraction strength (0..30+)
 uniform float u_frost;      // frosting amount (0 = clear lens .. 1 = milky glass)
 uniform float u_opacity;    // glass opacity (0..1)
-uniform sampler2D texture0;
+uniform sampler2D u_background;   // the scene behind this box (backdrop pass)
 in vec2 fragTexCoord;
 in vec4 fragColor;
 out vec4 finalColor;
@@ -50,7 +49,7 @@ vec2 toSceneUV(vec2 bx01) {
     return uv;
 }
 vec3 sampleScene(vec2 bx01) {
-    return texture(texture0, toSceneUV(bx01)).rgb;
+    return texture(u_background, toSceneUV(bx01)).rgb;
 }
 
 // small blur for the refracted backdrop (glassy depth); radius scales with frost
@@ -134,7 +133,7 @@ void main() {
         vec3 milky = vec3(0.84, 0.88, 0.94);
         col = mix(col, milky, frost * 0.40);
 
-        float a = clamp((u_opacity > 0.0 ? u_opacity : 0.55), 0.0, 1.0) * u_sample_background;
+        float a = clamp((u_opacity > 0.0 ? u_opacity : 0.55), 0.0, 1.0);
         finalColor = vec4(col, a);
     }
 

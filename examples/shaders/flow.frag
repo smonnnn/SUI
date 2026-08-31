@@ -5,17 +5,15 @@
 // hue-shifting trails just like the original CPU script, but on the GPU.
 //
 // Uses SUI's ping-pong feedback: the engine renders this shader sampling the
-// previous frame as 'texture0'. `uniform float u_feedback;` is the marker that
-// enables it. u_speed/u_pause/u_intensity/u_fade are driven by box attributes
-// (e.g. `.speed=calc(...)`), set by the engine.
-uniform float u_feedback;
+// previous frame as 'u_prev'. u_speed/u_pause/u_intensity/u_fade are driven by
+// box attributes (e.g. `.speed=calc(...)`), set by the engine.
 uniform vec2 iResolution;
 uniform float iTime;
 uniform float u_speed;      // advection speed (0 disables movement)
 uniform float u_pause;      // 1 = freeze the simulation
 uniform float u_intensity;  // streak brightness
 uniform float u_fade;       // trail persistence (0.90..0.99)
-uniform sampler2D texture0;
+uniform sampler2D u_prev;   // this box's previous frame (ping-pong feedback)
 in vec2 fragTexCoord;
 in vec4 fragColor;
 out vec4 finalColor;
@@ -39,7 +37,7 @@ vec3 hsv(float h, float s, float v) {
 
 void main() {
     vec2 uv = fragTexCoord;
-    if (u_pause > 0.5) { finalColor = vec4(texture(texture0, uv).rgb, 1.0); return; }
+    if (u_pause > 0.5) { finalColor = vec4(texture(u_prev, uv).rgb, 1.0); return; }
 
     float speed = u_speed > 0.0 ? u_speed : 1.0;
     float fade  = u_fade  > 0.0 ? u_fade  : 0.93;
@@ -55,7 +53,7 @@ void main() {
 
     // advect the previous frame along the flow (drags + curls the trails)
     vec2 prevUV = fract(uv + flow * speed * 0.011);
-    vec3 prev = texture(texture0, prevUV).rgb * fade;
+    vec3 prev = texture(u_prev, prevUV).rgb * fade;
 
     // deposit moving streaks that ride the flow
     vec2 pd = q * 0.02;
@@ -65,5 +63,5 @@ void main() {
     vec3 hue = hsv(fract(t * 0.03 + uv.x * 0.4 + uv.y * 0.2), 0.85, 1.0);
     vec3 col = max(prev, hue * streak);
 
-    finalColor = vec4(col, u_feedback);   // u_feedback is the ping-pong marker
+    finalColor = vec4(col, 1.0);
 }

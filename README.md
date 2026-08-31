@@ -29,20 +29,22 @@ containers, textures/animations/video, and first-class Python integration
   audio playback, play/pause, seek and mute.
 - **Shaders** — `.shader=file.frag` renders a GLSL fragment shader into a
   RenderTexture every frame (a GPU-generated "video"), with `iTime`,
-  `iResolution` and `iMouse` uniforms. Write your own `.frag` and point a box
-  at it (`examples/shaders/*`).
-- **Frame feedback (ping-pong)** — any shader that declares `uniform float
-  u_feedback;` is rendered with framebuffer feedback: the engine keeps two
-  textures per box, binds the previous frame as `texture0`, then swaps, so a
-  shader can read its own last frame and accumulate (trails, flow fields, smoke,
-  sand, growth effects). Generic `u_<name>` uniforms can be driven by matching
-  box attributes (`.speed=calc(…)`, `.fade=…`, etc.). `shaders/flow.frag` uses
-  this for a GPU flow field with fading, hue-shifting trails.
+  `iResolution` and `iMouse` uniforms (plus `u_origin`/`u_screenRes` and any
+  `u_<name>` fed from a box attribute). Two optional samplers are provided when
+  a shader uses them: `u_background` (the scene behind the box) and `u_prev`
+  (the box's previous frame). Write your own `.frag` and point a box at it
+  (`examples/shaders/*`).
+- **Frame feedback (ping-pong)** — any shader that uses `uniform sampler2D
+  u_prev;` is rendered with framebuffer feedback: the engine keeps two textures
+  per box, binds the previous frame as `u_prev`, then swaps, so a shader can
+  read its own last frame and accumulate (trails, flow fields, smoke, sand,
+  growth effects). `shaders/flow.frag` uses this for a GPU flow field with
+  fading, hue-shifting trails.
 - **Glass lens** — `shaders/glass.frag` is a real refracting lens (rounded-box
   SDF that matches the box's `.radius`, Schlick fresnel, chromatic aberration,
-  gaussian blur, drop shadow). Any box whose shader declares `uniform float
-  u_sample_background;` becomes a "lens": the engine renders the scene *behind*
-  it into an offscreen texture and binds it as `texture0` (via
+  gaussian blur, drop shadow). Any box whose shader uses `uniform sampler2D
+  u_background;` becomes a "lens": the engine renders the scene *behind* it into
+  an offscreen texture and binds it as `u_background` (via
   `set_shader_value_texture`), so the lens samples/refracts exactly what's
   underneath. The box's `.refrac`, `.frost` and `.opacity` attributes (e.g.
   `.refrac=calc(mycount())`) drive the refraction strength, frosting (blur +

@@ -230,20 +230,27 @@ Any box can be filled by a GLSL fragment shader:
 	.radius=14
 ```
 
-The engine gives every shader `iTime`, `iResolution`, `iMouse`. Box attributes
-map to `u_<name>` uniforms (`.refract` → `u_refract`, `.frost` → `u_frost`,
-`.speed` → `u_speed`, …), so you can drive a shader from the UI:
+The engine gives every shader these optional parameters — declare any you need:
 
-```
-.refrac=calc(refn())
-.frost=calc(frost_val())
-```
+- `iTime`, `iResolution`, `iMouse` — always provided.
+- `u_origin`, `u_screenRes` — this box's screen footprint (for mapping textures).
+- `u_<name>` — fed from the box attribute of the same name (`.refract` →
+  `u_refract`, `.frost` → `u_frost`, `.speed` → `u_speed`, …), so you can drive
+  a shader from the UI:
 
-Two built-in shader modes:
-- **`u_sample_background`** — a "lens" box that samples the scene *behind* it
-  (rendered into `texture0`) and refracts it.
-- **`u_feedback`** — frame feedback (ping-pong), for flow fields / trails
-  (`shaders/flow.frag`).
+  ```
+  .refrac=calc(refn())
+  .frost=calc(frost_val())
+  ```
+
+- `u_background` *(sampler2D)* — the scene *behind* this box (rendered into a
+  backdrop pass). Declaring it makes the box a "lens" that samples/refracts
+  what's underneath.
+- `u_prev` *(sampler2D)* — this box's own previous frame (ping-pong feedback),
+  for flow fields / trails (`shaders/flow.frag`).
+
+Both samplers are detected just by being used in the shader; no extra marker
+needed.
 
 ---
 

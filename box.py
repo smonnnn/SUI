@@ -1227,14 +1227,17 @@ def _render_one_shader(box):
         loc_t = get_shader_location(sh, b"iTime")
         loc_r = get_shader_location(sh, b"iResolution")
         loc_m = get_shader_location(sh, b"iMouse")
-        loc_g = get_shader_location(sh, b"u_sample_background")
+        loc_bg = get_shader_location(sh, b"u_background")
+        loc_prev = get_shader_location(sh, b"u_prev")
         loc_sr = get_shader_location(sh, b"u_screenRes")
         loc_o = get_shader_location(sh, b"u_origin")
-        loc_fb = get_shader_location(sh, b"u_feedback")
     except Exception:
-        loc_t = loc_r = loc_m = loc_g = loc_sr = loc_o = loc_fb = -1
-    box._sample_bg = loc_g >= 0      # 'u_sample_background': box samples the scene behind it
-    box._feedback = loc_fb >= 0        # 'u_feedback': ping-pong frame-feedback box
+        loc_t = loc_r = loc_m = loc_bg = loc_prev = loc_sr = loc_o = -1
+    # Optional samplers, detected purely by presence: a shader that uses
+    # 'u_background' reads the scene behind the box (backdrop pass); one that
+    # uses 'u_prev' gets its own previous frame (ping-pong feedback).
+    box._sample_bg = loc_bg >= 0
+    box._feedback = loc_prev >= 0
     tf = _pr.ffi.new("float *", get_time())
     rv = _pr.ffi.new("float[2]", [float(wt), float(ht)])
     mp = get_mouse_position()
@@ -1245,12 +1248,6 @@ def _render_one_shader(box):
         set_shader_value_v(sh, loc_r, rv, 1, 1)
     if loc_m >= 0:
         set_shader_value_v(sh, loc_m, mv, 1, 1)
-    if loc_g >= 0:
-        gv = _pr.ffi.new("float *", 1.0 if box._sample_bg else 0.0)
-        set_shader_value(sh, loc_g, gv, 0)
-    if loc_fb >= 0:
-        fv = _pr.ffi.new("float *", 1.0 if box._feedback else 0.0)
-        set_shader_value(sh, loc_fb, fv, 0)
     if loc_sr >= 0:
         sv = _pr.ffi.new("float[2]", [float(get_screen_width()), float(get_screen_height())])
         set_shader_value_v(sh, loc_sr, sv, 1, 1)
@@ -1271,7 +1268,7 @@ def _render_one_shader(box):
 
     if box._feedback:
         # Ping-pong feedback: render the shader into a scratch texture, sampling
-        # the previous frame (cur) as 'texture0' (trail accumulation), then swap
+        # the previous frame (cur) as 'u_prev' (trail accumulation), then swap
         # so the fresh frame becomes the blit target for next frame.
         cur = box._shader_rt
         scratch = getattr(box, "_fb_rt", None)
@@ -1286,10 +1283,9 @@ def _render_one_shader(box):
             _SHADER_RTS.append(scratch)
         begin_texture_mode(scratch)
         clear_background(BLACK)
-        loc0 = get_shader_location(sh, b"texture0")
-        if loc0 >= 0:
+        if loc_prev >= 0:
             try:
-                set_shader_value_texture(sh, loc0, cur.texture)
+                set_shader_value_texture(sh, loc_prev, cur.texture)
             except Exception as e:
                 print("[SUI] feedback texture bind failed:", e)
         begin_shader_mode(sh)
@@ -1303,12 +1299,11 @@ def _render_one_shader(box):
     begin_texture_mode(rt)
     clear_background(BLANK)
     if box._sample_bg and _SCENE_RT is not None:
-        # sample the backdrop (scene beneath this box) as 'texture0', drawing the
-        # box's own footprint so the lens refracts exactly what's behind it.
-        loc0 = get_shader_location(sh, b"texture0")
-        if loc0 >= 0:
+        # sample the backdrop (scene beneath this box) as 'u_background', drawing
+        # the box's own footprint so the lens refracts exactly what's behind it.
+        if loc_bg >= 0:
             try:
-                set_shader_value_texture(sh, loc0, _SCENE_RT.texture)
+                set_shader_value_texture(sh, loc_bg, _SCENE_RT.texture)
             except Exception as e:
                 print("[SUI] texture bind failed:", e)
         begin_shader_mode(sh)
