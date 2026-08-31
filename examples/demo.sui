@@ -1,12 +1,10 @@
 # ===========================================================================
-#  SUI demo — a small, readable layout.
-#  One property per line. Shared attribute groups: attributes defined on any
-#  box named like `item.home` belong to the `item` group and are inherited by
-#  the other `item.*` boxes, UNLESS they appear on more than one (then each
-#  box keeps its own). Here `item.home` holds the shared styling for all the
-#  nav buttons; `feed.0` holds the shared styling for the feed list.
+#  SUI demo — a polished, readable layout.
+#  One property per line; shared groups (item.*, feed.*, cell.*, pbtn.*, ctr.*)
+#  keep repeated styling out of the way. Pages are swapped in with
+#  set_children(swap, content.X).
 #
-#  Run:  python box.py demo.sui
+#  Run:  python box.py examples/demo.sui
 # ===========================================================================
 
 # ------ colors ------
@@ -21,7 +19,7 @@ LINE =          (6, 52, 52, 255)
 
 # ------ python helpers (available to calc / script / click) ------
 @python
-import math, datetime
+import datetime
 
 def clk():
     return datetime.datetime.now().strftime("%H:%M:%S")
@@ -29,9 +27,14 @@ def clk():
 def greeting(name):
     return "Hello, " + name + "!"
 
-def bump(label):
-    label.clicks = getattr(label, "clicks", 0) + 1
-    label.text = "Clicks: %d" % label.clicks
+STATE = {"n": 0}
+
+def bump(box, d):
+    STATE["n"] += int(d)
+    return True
+
+def count():
+    return "Clicks: %d" % STATE["n"]
 @end
 
 # ------ default styling inherited by every box ------
@@ -62,7 +65,7 @@ def bump(label):
 			.texture_fit=contain
 			.color=None
 			.strength=22
-		[1-title]:
+		[1-title-block]:
 			.color=None
 			.vertical
 			.align_y=center
@@ -102,7 +105,7 @@ def bump(label):
 				.text_color=MUTED
 				.text="NAVIGATION"
 				.padding=2
-			# item.* share everything below except text/click
+			# item.* share styling; each keeps its own text/click
 			[1-item.home]:
 				.text="Home"
 				.color=ACCENT
@@ -123,7 +126,7 @@ def bump(label):
 				.text_color=ACCENT
 				.text="FEED"
 				.padding=8
-			# feed.* share everything below except text
+			# feed.* share styling; each keeps its own text
 			[1-feed.0]:
 				.text="Item 00 - live stream"
 				.color=PANEL_LIGHT
@@ -165,7 +168,7 @@ def bump(label):
 					.color=None
 					.padding=0
 					.margin=0
-					[1-herotext]:
+					[1-hero]:
 						.color=ACCENT
 						.vertical
 						.align_y=center
@@ -192,20 +195,28 @@ def bump(label):
 						.margin=6
 						.radius=14
 						[1-ctrLabel]:
-							.text="Clicks: 0"
+							.text=calc(count())
 							.color=None
 							.text_color=ACCENT
 							.align_x=center
 							.padding=4
-						[1-ctrButton]:
-							.text="+1"
-							.color=ACCENT
-							.text_color=LINE
-							.padding=14
-							.margin=6
-							.radius=10
-							.align_x=center
-							.click=bump(ctrLabel)
+						[1-ctrRow]:
+							.horizontal
+							.color=None
+							.padding=0
+							# ctr.* share styling; each keeps its own text/click
+							[1-ctr.minus]:
+								.text="-1"
+								.color=ACCENT
+								.text_color=LINE
+								.padding=14
+								.margin=6
+								.radius=10
+								.align_x=center
+								.click=bump(ctr.minus, -1)
+							[1-ctr.plus]:
+								.text="+1"
+								.click=bump(ctr.plus, 1)
 					[1-para]:
 						.color=PANEL
 						.padding=18
@@ -230,6 +241,7 @@ def bump(label):
 		.horizontal
 		.color=None
 		.padding=0
+		# cell.* share card styling; n.* share the big number; l.* share the label
 		[1-cell.a]:
 			.vertical
 			.color=PANEL
@@ -256,16 +268,8 @@ def bump(label):
 			.radius=14
 			[1-n.b]:
 				.text="98%"
-				.color=None
-				.text_color=ACCENT
-				.align_x=center
-				.padding=0
 			[1-l.b]:
 				.text="Retention"
-				.color=None
-				.text_color=MUTED
-				.align_x=center
-				.padding=0
 		[1-cell.c]:
 			.vertical
 			.color=PANEL
@@ -274,16 +278,8 @@ def bump(label):
 			.radius=14
 			[1-n.c]:
 				.text="40"
-				.color=None
-				.text_color=ACCENT
-				.align_x=center
-				.padding=0
 			[1-l.c]:
 				.text="Episodes"
-				.color=None
-				.text_color=MUTED
-				.align_x=center
-				.padding=0
 
 [1-content.player]:
 	.vertical
@@ -318,7 +314,8 @@ def bump(label):
 		.color=None
 		.padding=0
 		.margin=6
-		[1-pmp]:
+		# pbtn.* share styling; each keeps its own text/click
+		[1-pbtn.play]:
 			.text=calc("Pause" if media_playing(boxes["pvideo"]) else "Play")
 			.color=ACCENT
 			.text_color=LINE
@@ -327,7 +324,7 @@ def bump(label):
 			.radius=10
 			.align_x=center
 			.click=media_toggle(pvideo)
-		[1-popen]:
+		[1-pbtn.open]:
 			.text="Open file"
 			.color=ACCENT
 			.text_color=LINE
@@ -336,7 +333,7 @@ def bump(label):
 			.radius=10
 			.align_x=center
 			.click=media_open(pvideo)
-		[1-pvol]:
+		[1-pbtn.mute]:
 			.text="Mute"
 			.color=PANEL_LIGHT
 			.text_color=TEXT

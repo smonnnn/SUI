@@ -1,19 +1,21 @@
 # ===========================================================================
 #  SUI example — "Shader Lab"
 #  A full-screen procedural shader rendered to a texture each frame (i.e.
-#  GPU-generated "video"). Click the buttons to switch shaders.
+#  GPU-generated "video"). Click the buttons to switch shaders. Uses a shared
+#  'b' button group for the sidebar and a live clock in the header.
 #
 #  Run:  python box.py examples/shader.sui
 # ===========================================================================
 
 @python
-import math
-from math import sin, cos, pi
+import datetime
+
+def clk():
+    return datetime.datetime.now().strftime("%H:%M:%S")
 
 SHADERS = ["shaders/plasma.frag", "shaders/swirl.frag", "shaders/mandelbrot.frag", "shaders/waves.frag"]
 
 def shader_pick(box, idx):
-    box.name  # (unused) — the target is the stage
     boxes["stage"].shader = _resolve_media(SHADERS[idx % len(SHADERS)])
     return True
 
@@ -64,14 +66,20 @@ LINE =          (6, 46, 48, 255)
 				.color=None
 				.align_x=center
 				.padding=0
-				.margin=0
 			[1-h-status]:
 				.text=calc(shader_status())
 				.color=None
 				.text_color=ACCENT
 				.align_x=center
 				.padding=0
-				.margin=0
+		[1-h-clock]:
+			.color=None
+			.text_color=ACCENT
+			.text=calc(clk())
+			.align_y=center
+			.align_x=right
+			.padding=10
+			.strength=18
 	[86-body]:
 		.horizontal
 		.padding=0
@@ -89,6 +97,7 @@ LINE =          (6, 46, 48, 255)
 				.text_color=MUTED
 				.text="SHADERS"
 				.padding=2
+			# b.* share styling; each keeps its own text + click
 			[1-b.a]:
 				.text="Plasma"
 				.color=ACCENT

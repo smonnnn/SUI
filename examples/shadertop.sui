@@ -2,7 +2,7 @@
 #  SUI example — "Shadertop"
 #  A live GPU shader as the wallpaper of a little interface. Every widget is a
 #  translucent box on top of the shader, so the animation shows through.
-#  buttons call python callbacks; the title bar has a live clock.
+#  Buttons call python callbacks; the title bar has a live clock.
 #
 #  Run:  python box.py examples/shadertop.sui
 # ===========================================================================
@@ -24,11 +24,15 @@ def count():
 @end
 
 # ------ colors ------
-BG =            (10, 18, 20, 255)
-TEXT =          (240, 244, 240, 255)
-ACCENT =        (237, 163, 90, 255)
-DARK =          (10, 24, 26, 255)
-
+BG =      (10, 18, 20, 255)
+TEXT =    (240, 244, 240, 255)
+ACCENT =  (120, 210, 235, 255)
+DARK =    (10, 24, 26, 255)
+BAR =     (18, 30, 34, 160)     # translucent top bar
+CARD =    (18, 30, 34, 130)     # translucent card
+PILL =    (10, 24, 26, 140)     # translucent counter strip
+APP =     (30, 60, 70, 90)      # translucent app pill
+FOOT =    (18, 30, 34, 120)     # translucent footer
 
 [1-root]:
 	.vertical
@@ -44,7 +48,7 @@ DARK =          (10, 24, 26, 255)
 		.vertical
 		[1-topbar]:
 			.horizontal
-			.color=(18, 30, 34, 160)
+			.color=BAR
 			.padding=12
 			.margin=0
 			.radius=0
@@ -68,7 +72,7 @@ DARK =          (10, 24, 26, 255)
 			.padding=14
 			[1-app.a]:
 				.text="GALLERY"
-				.color=(30, 60, 70, 90)
+				.color=APP
 				.text_color=TEXT
 				.padding=16
 				.margin=6
@@ -81,7 +85,7 @@ DARK =          (10, 24, 26, 255)
 				.text="SETTINGS"
 				.click=bump(app.c, 1)
 		[1-card]:
-			.color=(18, 30, 34, 130)
+			.color=CARD
 			.margin=14
 			.radius=14
 			.strength=60
@@ -95,16 +99,16 @@ DARK =          (10, 24, 26, 255)
 			[1-card-body]:
 				.color=None
 				.text_color=TEXT
-				.text="Every widget here is a translucent box floating over a GPU fragment shader (Waves by @XorDev). Click the pill below and the counter updates through a Python callback; the clock is calc(clk()) and the wallpaper is one .shader= line."
+				.text="Every widget here is a translucent box floating over a GPU fragment shader (Waves by @XorDev). The clock is calc(clk()), the counter is a python callback, and the wallpaper is one .shader= line."
 				.padding=14
 				.margin=4
 			[1-counter]:
 				.horizontal
-				.color=(10, 24, 26, 140)
+				.color=PILL
 				.padding=10
 				.margin=6
 				.radius=12
-				[1-minus]:
+				[1-pill.m]:
 					.text="-1"
 					.color=ACCENT
 					.text_color=DARK
@@ -112,24 +116,18 @@ DARK =          (10, 24, 26, 255)
 					.margin=4
 					.radius=10
 					.align_x=center
-					.click=bump(minus, -1)
+					.click=bump(pill.m, -1)
 				[1-score]:
 					.color=None
 					.text_color=TEXT
 					.align_x=center
 					.strength=40
 					.text=calc(count())
-				[1-plus]:
+				[1-pill.p]:
 					.text="+1"
-					.color=ACCENT
-					.text_color=DARK
-					.padding=12
-					.margin=4
-					.radius=10
-					.align_x=center
-					.click=bump(plus, 1)
+					.click=bump(pill.p, 1)
 		[1-foot]:
-			.color=(18, 30, 34, 120)
+			.color=FOOT
 			.padding=10
 			.align_x=center
 			.strength=20

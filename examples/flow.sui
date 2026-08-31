@@ -43,14 +43,18 @@ def flow_speed(box, d):
 
 def flow_preset(box, idx):
     if idx == 0:
-        FLOW.update({"scale": 0.004, "speed": 1.4, "sat": 0.78, "val": 0.92, "fade": 0.93})
+        FLOW.update({"scale": 0.004, "speed": 1.4, "fade": 0.93})
     elif idx == 1:
-        FLOW.update({"scale": 0.009, "speed": 3.6, "sat": 0.97, "val": 0.97, "fade": 0.90})
+        FLOW.update({"scale": 0.009, "speed": 3.6, "fade": 0.90})
     else:
-        FLOW.update({"scale": 0.0014, "speed": 0.7, "sat": 0.55, "val": 0.85, "fade": 0.96})
+        FLOW.update({"scale": 0.0014, "speed": 0.7, "fade": 0.96})
     return True
 
-# shader-facing values (the GPU flow field reads these each frame)
+# live readouts + shader-facing values
+def density_label():
+    return "%d" % FLOW["n"]
+def speed_label():
+    return "%.1f" % FLOW["speed"]
 def flow_speed_val():
     return FLOW["speed"] * 0.22
 def flow_density_val():
@@ -62,10 +66,9 @@ def flow_fade():
     return FLOW.get("fade", 0.93)
 def flow_paused():
     return 1 if (not FLOW["alive"]) else 0
-
 def flow_status():
-    return "particles %d  speed %.1f  %s" % (
-        FLOW["n"], FLOW["speed"], "flowing" if FLOW["alive"] else "paused")
+    return "%s  %d particles  %.1f speed" % (
+        "flowing" if FLOW["alive"] else "paused", FLOW["n"], FLOW["speed"])
 @end
 
 # ------ default styling ------
@@ -131,7 +134,7 @@ def flow_status():
 				.text_color=MUTED
 				.text="CONTROLS"
 				.padding=2
-			# primary buttons — bp.* share styling, each keeps its own text/click
+			# primary buttons — bp.* share styling, each keeps text/click
 			[1-bp.play]:
 				.text=calc("Pause" if FLOW["alive"] else "Play")
 				.color=ACCENT
@@ -154,31 +157,51 @@ def flow_status():
 				.text_color=ACCENT
 				.text="DENSITY"
 				.padding=6
-			# secondary buttons — bs.* share styling
-			[1-bs.minus]:
-				.text="Fewer"
-				.color=PANEL_LIGHT
-				.hover_color=ACCENT
-				.padding=14
-				.margin=4
-				.radius=10
-				.align_x=center
-				.text_color=TEXT
-				.click=flow_n(bs.minus, -60)
-			[1-bs.plus]:
-				.text="More"
-				.click=flow_n(bs.plus, 60)
+			# row.* share layout; bs.* share pill styling; val.* share readout styling
+			[1-row.density]:
+				.horizontal
+				.color=None
+				.padding=4
+				[1-bs.minus]:
+					.text="Fewer"
+					.color=PANEL_LIGHT
+					.hover_color=ACCENT
+					.padding=12
+					.margin=3
+					.radius=10
+					.align_x=center
+					.text_color=TEXT
+					.click=flow_n(bs.minus, -60)
+				[1-val.density]:
+					.color=None
+					.text_color=ACCENT
+					.align_x=center
+					.strength=25
+					.text=calc(density_label())
+				[1-bs.plus]:
+					.text="More"
+					.click=flow_n(bs.plus, 60)
 			[1-param-label2]:
 				.color=None
 				.text_color=ACCENT
 				.text="SPEED"
 				.padding=6
-			[1-bs.slow]:
-				.text="Slower"
-				.click=flow_speed(bs.slow, -0.6)
-			[1-bs.fast]:
-				.text="Faster"
-				.click=flow_speed(bs.fast, 0.6)
+			[1-row.speed]:
+				.horizontal
+				.color=None
+				.padding=4
+				[1-bs.slow]:
+					.text="Slower"
+					.click=flow_speed(bs.slow, -0.6)
+				[1-val.speed]:
+					.color=None
+					.text_color=ACCENT
+					.align_x=center
+					.strength=25
+					.text=calc(speed_label())
+				[1-bs.fast]:
+					.text="Faster"
+					.click=flow_speed(bs.fast, 0.6)
 			[1-sep2]:
 				.color=BG
 				.strength=2
