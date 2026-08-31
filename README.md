@@ -41,12 +41,13 @@ containers, textures/animations/video, and first-class Python integration
 - **Glass lens** — `shaders/glass.frag` is a real refracting lens (rounded-box
   SDF that matches the box's `.radius`, Schlick fresnel, chromatic aberration,
   gaussian blur, drop shadow). Any box whose shader declares `uniform float
-  u_glass;` becomes a "lens": the engine renders the scene *behind* it into an
-  offscreen texture and binds it as `texture0` (via `set_shader_value_texture`),
-  so the lens samples/refracts exactly what's underneath. The box's `.refrac`,
-  `.frost` and `.opacity` attributes (e.g. `.refrac=calc(mycount())`) drive the
-  refraction strength, frosting (blur + milky turbidity) and alpha.
-  `glassurf.sui` puts one over the Waves wallpaper with -/+ controls for each.
+  u_sample_background;` becomes a "lens": the engine renders the scene *behind*
+  it into an offscreen texture and binds it as `texture0` (via
+  `set_shader_value_texture`), so the lens samples/refracts exactly what's
+  underneath. The box's `.refrac`, `.frost` and `.opacity` attributes (e.g.
+  `.refrac=calc(mycount())`) drive the refraction strength, frosting (blur +
+  milky turbidity) and alpha. `glassurf.sui` puts one over the Waves wallpaper
+  with -/+ controls for each.
 - **Hover / selected colors** — `.hover_color` and `.selected_color`.
 - **Shared attribute groups** — boxes named like `item.home` form an `item` group;
   attributes appearing on only one member are inherited by the rest, while

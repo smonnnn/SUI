@@ -231,7 +231,7 @@ Any box can be filled by a GLSL fragment shader:
 ```
 
 The engine gives every shader `iTime`, `iResolution`, `iMouse`. Box attributes
-map to `u_<name>` uniforms (`.refrac` → `u_refract`, `.frost` → `u_frost`,
+map to `u_<name>` uniforms (`.refract` → `u_refract`, `.frost` → `u_frost`,
 `.speed` → `u_speed`, …), so you can drive a shader from the UI:
 
 ```
@@ -240,7 +240,8 @@ map to `u_<name>` uniforms (`.refrac` → `u_refract`, `.frost` → `u_frost`,
 ```
 
 Two built-in shader modes:
-- **`u_glass`** — a "lens" box that refracts the scene behind it.
+- **`u_sample_background`** — a "lens" box that samples the scene *behind* it
+  (rendered into `texture0`) and refracts it.
 - **`u_feedback`** — frame feedback (ping-pong), for flow fields / trails
   (`shaders/flow.frag`).
 

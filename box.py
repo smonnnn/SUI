@@ -1227,13 +1227,13 @@ def _render_one_shader(box):
         loc_t = get_shader_location(sh, b"iTime")
         loc_r = get_shader_location(sh, b"iResolution")
         loc_m = get_shader_location(sh, b"iMouse")
-        loc_g = get_shader_location(sh, b"u_glass")
+        loc_g = get_shader_location(sh, b"u_sample_background")
         loc_sr = get_shader_location(sh, b"u_screenRes")
         loc_o = get_shader_location(sh, b"u_origin")
         loc_fb = get_shader_location(sh, b"u_feedback")
     except Exception:
         loc_t = loc_r = loc_m = loc_g = loc_sr = loc_o = loc_fb = -1
-    box._glass = loc_g >= 0           # 'u_glass': backdrop-sampling lens box
+    box._sample_bg = loc_g >= 0      # 'u_sample_background': box samples the scene behind it
     box._feedback = loc_fb >= 0        # 'u_feedback': ping-pong frame-feedback box
     tf = _pr.ffi.new("float *", get_time())
     rv = _pr.ffi.new("float[2]", [float(wt), float(ht)])
@@ -1246,7 +1246,7 @@ def _render_one_shader(box):
     if loc_m >= 0:
         set_shader_value_v(sh, loc_m, mv, 1, 1)
     if loc_g >= 0:
-        gv = _pr.ffi.new("float *", 1.0 if box._glass else 0.0)
+        gv = _pr.ffi.new("float *", 1.0 if box._sample_bg else 0.0)
         set_shader_value(sh, loc_g, gv, 0)
     if loc_fb >= 0:
         fv = _pr.ffi.new("float *", 1.0 if box._feedback else 0.0)
@@ -1302,7 +1302,7 @@ def _render_one_shader(box):
 
     begin_texture_mode(rt)
     clear_background(BLANK)
-    if box._glass and _SCENE_RT is not None:
+    if box._sample_bg and _SCENE_RT is not None:
         # sample the backdrop (scene beneath this box) as 'texture0', drawing the
         # box's own footprint so the lens refracts exactly what's behind it.
         loc0 = get_shader_location(sh, b"texture0")
@@ -1558,7 +1558,7 @@ def _draw_self(box, clip):
         if box.shader:
             # backdrop pass omits glass boxes so the backdrop shows the scene
             # behind them for the lens to refract.
-            if not (_STATIC_PASS and getattr(box, '_glass', False)):
+            if not (_STATIC_PASS and getattr(box, '_sample_bg', False)):
                 _draw_shader(box, cx, cy, cw, ch, content_clip)
         else:
             _draw_media(box, cx, cy, cw, ch, content_clip)
@@ -1572,7 +1572,7 @@ def _render(box, clip):
     # Backdrop pass: a glass box is omitted entirely (content AND its whole
     # subtree) so the lens only refracts what's genuinely behind it (its
     # ancestors), never its own children/text.
-    if _STATIC_PASS and getattr(box, "_glass", False):
+    if _STATIC_PASS and getattr(box, "_sample_bg", False):
         return
     if box.parent is not None:
         _draw_self(box, clip)
@@ -2061,7 +2061,7 @@ def main():
         # backdrop pass: render the scene (glass boxes omitted) into a screen
         # sized texture so lens boxes can sample/refract what's underneath.
         global _STATIC_PASS
-        if any(getattr(b, "_glass", False) for b in _BOXES.values()):
+        if any(getattr(b, "_sample_bg", False) for b in _BOXES.values()):
             if _ensure_scene_rt(int(get_screen_width()), int(get_screen_height())) is not None:
                 _STATIC_PASS = True
                 begin_texture_mode(_SCENE_RT)

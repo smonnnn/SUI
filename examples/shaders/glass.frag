@@ -9,7 +9,7 @@ uniform float iTime;
 uniform vec2 iMouse;        // box-relative (px, y down)
 uniform vec2 u_origin;      // this box's top-left, screen px
 uniform vec2 u_screenRes;   // window size, px
-uniform float u_glass;      // marker: declares this box as a lens
+uniform float u_sample_background;  // marker: this shader samples the scene behind it
 uniform float u_corner;     // the box's corner radius (px)
 uniform float u_refract;    // counter-driven refraction strength (0..30+)
 uniform float u_frost;      // frosting amount (0 = clear lens .. 1 = milky glass)
@@ -134,7 +134,7 @@ void main() {
         vec3 milky = vec3(0.84, 0.88, 0.94);
         col = mix(col, milky, frost * 0.40);
 
-        float a = clamp((u_opacity > 0.0 ? u_opacity : 0.55), 0.0, 1.0) * u_glass;
+        float a = clamp((u_opacity > 0.0 ? u_opacity : 0.55), 0.0, 1.0) * u_sample_background;
         finalColor = vec4(col, a);
     }
 
