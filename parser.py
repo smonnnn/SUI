@@ -245,32 +245,37 @@ def parse(layout_filename, ns=None):
     if python_buf:
         python_blocks.append("\n".join(python_buf))
 
-    # --- Group merging for shared attributes ---
-    groups = defaultdict(list)
-    for name in boxes:
-        if '.' in name:
-            prefix = name.split('.')[0]
-            groups[prefix].append(name)
+    # --- Recursive group merging for shared attributes ---
+    # A dotted name like 'btn.m.refract' is a member of every group formed by
+    # its dot-segments: 'btn' and 'btn.m' (and 'btn.p' for the plus variants).
+    # Groups are merged deepest-first so the most specific one wins. Within a
+    # group, an attribute that is *declared* on exactly one member is shared
+    # with the other members. Counting uses a snapshot of the original
+    # declarations, so a parent group's "appears once" test isn't skewed by
+    # attributes a subgroup already inherited.
+    declared = {n: set(k for k in boxes[n].keys()
+                       if k not in ('name', 'parent', 'indent', 'strength'))
+                for n in boxes}
 
-    for prefix, names in groups.items():
+    prefixes = set()
+    for name, keys in declared.items():
+        if '.' in name:
+            parts = name.split('.')
+            for i in range(1, len(parts)):
+                prefixes.add('.'.join(parts[:i]))
+
+    for prefix in sorted(prefixes, key=lambda p: -p.count('.')):
+        names = [n for n in declared if n.startswith(prefix + '.')]
+        if len(names) < 2:
+            continue
         all_keys = set()
         for name in names:
-            all_keys.update(k for k in boxes[name].keys()
-                            if k not in ('name', 'parent', 'indent', 'strength'))
-
-        key_counts = {}
+            all_keys |= declared[name]
         key_src = {}
         for key in all_keys:
-            count = 0
-            src = None
-            for name in names:
-                if key in boxes[name]:
-                    count += 1
-                    src = name
-            key_counts[key] = count
-            if count == 1:
-                key_src[key] = (src, boxes[src][key])
-
+            srcs = [n for n in names if key in declared[n]]
+            if len(srcs) == 1:
+                key_src[key] = (srcs[0], boxes[srcs[0]][key])
         for name in names:
             for key, (src, val) in key_src.items():
                 if key not in boxes[name]:

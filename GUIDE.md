@@ -177,12 +177,45 @@ several stay per-box. This is how `glassurf.sui` keeps three control rows
 	.text="Opacity"
 ```
 
-The same trick powers the `minus.*` / `plus.*` / `val.*` groups — the pill
-styling and the readout styling are written once each.
+The same trick powers the `btn.*` pills — the pill styling is written once and
+inherited by every button.
+
+### Groups are recursive
+
+Every dot-segment of a name is a group, and the most specific one wins. So you
+can give *variants* their own shared values: the minus buttons are a `btn.m`
+group and the plus buttons a `btn.p` group, nested inside the shared `btn`
+group:
+
+```
+# 'btn' group: shared styling (color, radius, padding, …) for all buttons
+[5-btn.m.refract]:
+	.color=ACCENT
+	.radius=10
+	.text="-"
+	.click=bump(btn.m.refract, -1)
+[5-btn.m.frost]:
+	.click=set_frost(btn.m.frost, -0.12)   # inherits '-' + styling from btn.m.refract
+[5-btn.m.opacity]:
+	.click=set_opacity(btn.m.opacity, -0.10)
+
+[5-btn.p.refract]:
+	.text="+"
+	.click=bump(btn.p.refract, 1)          # 'btn.p' group shares '+'
+[5-btn.p.frost]:
+	.click=set_frost(btn.p.frost, 0.12)
+[5-btn.p.opacity]:
+	.click=set_opacity(btn.p.opacity, 0.10)
+```
+
+Here `btn.m` shares `text="-"` and the pill styling; `btn.p` shares `text="+"`;
+and because the subgroups merge before the outer `btn` group, the styling is
+inherited everywhere and each variant keeps its own text. `.click` is unique
+per member, so it's never shared.
 
 > Tip: because inherited attributes are picked from whichever member declares
-> them, put the *shared* attributes on the **first** member and only override
-> per-member values (like `.text` and `.click`) on the others.
+> them, put the *shared* attributes on the **first** member of each group (and
+> reference a box by its full dotted name in `click=`/`hover=`).
 
 ---
 
