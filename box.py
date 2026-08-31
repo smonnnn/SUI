@@ -1200,6 +1200,18 @@ def _render_shader_pass():
             print("[SUI] shader render error:", e)
     _SHADER_BOXES.clear()
 
+def _bind_sampler(sh, loc, tex):
+    """Bind 'tex' to a sampler uniform and force it onto texture unit 0.
+
+    The base texture is always drawn on unit 0, and in this raylib build a
+    custom sampler is only sampled reliably when its uniform points at that
+    unit (set_shader_value_texture alone leaves it undefined)."""
+    try:
+        set_shader_value_texture(sh, loc, tex)
+        set_shader_value(sh, loc, _pr.ffi.new("int *", 0), RL_SHADER_UNIFORM_INT)
+    except Exception as e:
+        print("[SUI] texture bind failed:", e)
+
 def _render_one_shader(box):
     if not box.shader:
         return
@@ -1284,10 +1296,7 @@ def _render_one_shader(box):
         begin_texture_mode(scratch)
         clear_background(BLACK)
         if loc_prev >= 0:
-            try:
-                set_shader_value_texture(sh, loc_prev, cur.texture)
-            except Exception as e:
-                print("[SUI] feedback texture bind failed:", e)
+            _bind_sampler(sh, loc_prev, cur.texture)
         begin_shader_mode(sh)
         draw_texture_pro(cur.texture, Rectangle(0, 0, float(wt), float(ht)),
                          Rectangle(0, 0, float(wt), float(ht)), Vector2(0, 0), 0, WHITE)
@@ -1302,10 +1311,7 @@ def _render_one_shader(box):
         # sample the backdrop (scene beneath this box) as 'u_background', drawing
         # the box's own footprint so the lens refracts exactly what's behind it.
         if loc_bg >= 0:
-            try:
-                set_shader_value_texture(sh, loc_bg, _SCENE_RT.texture)
-            except Exception as e:
-                print("[SUI] texture bind failed:", e)
+            _bind_sampler(sh, loc_bg, _SCENE_RT.texture)
         begin_shader_mode(sh)
         draw_texture_pro(_SCENE_RT.texture, Rectangle(x, y, float(wt), float(ht)),
                          Rectangle(0, 0, float(wt), float(ht)), Vector2(0, 0), 0, WHITE)
