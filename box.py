@@ -392,9 +392,17 @@ _VIDEO_EXTS = (".mp4", ".m4v", ".avi", ".mov", ".webm", ".mkv", ".mpg", ".mpeg",
                ".vob", ".rmvb", ".m2v", ".dv", ".ogm", ".asf", ".f4v")
 
 def _is_video_file(path):
-    if os.path.isdir(path) or any(ch in path for ch in "*?["):
+    if os.path.isdir(path):
         return False
-    return os.path.splitext(path)[1].lower() in _VIDEO_EXTS
+    ext = os.path.splitext(path)[1].lower()
+    if os.path.isfile(path):
+        # a real file: accept it even if its name contains glob chars, e.g.
+        # "[Yameii] ... [AFE152C0].mkv" — brackets/spaces are fine in names
+        return ext in _VIDEO_EXTS
+    # not an existing file: treat glob/frame patterns as not-a-single-video
+    if any(ch in path for ch in "*?["):
+        return False
+    return ext in _VIDEO_EXTS
 
 
 def _video_meta(path, ffmpeg):
