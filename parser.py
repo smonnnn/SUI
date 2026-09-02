@@ -1,6 +1,34 @@
 from collections import defaultdict
+import ast
 import textwrap
 import importlib
+
+def _strip_comment(line):
+    """Remove a trailing ``#`` comment, but not one inside a quoted string."""
+    out = []
+    q = None
+    i = 0
+    n = len(line)
+    while i < n:
+        ch = line[i]
+        if q is not None:
+            out.append(ch)
+            if ch == "\\":
+                out.append(line[i + 1] if i + 1 < n else "")
+                i += 2
+                continue
+            if ch == q:
+                q = None
+        else:
+            if ch in ('"', "'"):
+                q = ch
+                out.append(ch)
+            elif ch == "#":
+                break
+            else:
+                out.append(ch)
+        i += 1
+    return "".join(out)
 
 def get_int(string):
     """Extract the first integer from a string."""
@@ -32,20 +60,27 @@ def parse_ints(string):
 
 def _norm_value(param_name, param_string, colors):
     """Normalise a raw attribute value into a Python value."""
-    if param_name in ("script", "texture", "anim", "video", "shader"):
+    if param_name in ("script", "texture", "anim", "video", "shader", "font"):
         return param_string
     if param_name in ("align_x", "align_y", "texture_fit"):
         return param_string
     if param_string.startswith('('):
         return parse_ints(param_string)
     if param_string.startswith('"'):
-        return param_string[1:-1]
+        try:
+            return ast.literal_eval(param_string)  # honour \uXXXX escapes
+        except Exception:
+            return param_string[1:-1]
     if param_string in ("True", "False"):
         return param_string == "True"
     if param_string == "None":
         return None
     if param_string.isdigit() or (param_string.startswith('-') and param_string[1:].isdigit()):
         return int(param_string)
+    try:
+        return float(param_string)   # numeric values may be floats
+    except ValueError:
+        pass
     if param_name.startswith("click") or param_name in ("hover", "onclick", "onhover"):
         fn_name = param_string[:param_string.find("(")] if "(" in param_string else param_string
         prms = param_string[param_string.find("(")+1:param_string.rfind(")")] if "(" in param_string else ""
@@ -54,12 +89,42 @@ def _norm_value(param_name, param_string, colors):
     # Assume it's a color name; look it up
     return colors.get(param_string, [0, 0, 0, 0])
 
+def _extract_calc(param_string):
+    """Pull the expression out of ``calc(...)``, balancing nested parentheses
+    and ignoring parens inside string literals."""
+    start = param_string.find("(")
+    if start < 0:
+        return param_string
+    depth = 0
+    q = None
+    i = start
+    n = len(param_string)
+    while i < n:
+        ch = param_string[i]
+        if q is not None:
+            if ch == "\\":
+                i += 1
+            elif ch == q:
+                q = None
+        else:
+            if ch in ('"', "'"):
+                q = ch
+            elif ch == "(":
+                depth += 1
+            elif ch == ")":
+                depth -= 1
+                if depth == 0:
+                    return param_string[start + 1:i]
+        i += 1
+    return param_string[start + 1:]
+
 def _store_attr(boxes, current_box, param_name, param_string, colors):
     if not current_box:
         return
+    if param_name == "strength":
+        return  # strength comes only from the [N-name] header, never a property
     if param_string.startswith("calc"):
-        inner = param_string[param_string.find("(")+1:param_string.rfind(")")]
-        boxes[current_box]["functions"][param_name] = inner
+        boxes[current_box]["functions"][param_name] = _extract_calc(param_string)
         return
     boxes[current_box][param_name] = _norm_value(param_name, param_string, colors)
 
@@ -167,15 +232,18 @@ def parse(layout_filename, ns=None):
             i += 1
             continue
 
-        # Remove comments (only outside python blocks)
-        if '#' in line:
-            line = line[:line.index('#')]
+        # Remove comments (only outside python blocks), but keep `#` that lives
+        # inside a quoted string value (e.g. .text="50% # off").
+        line = _strip_comment(line)
         line = line.rstrip()
         if not line:
             i += 1
             continue
 
         stripped = line.lstrip('\t')
+        if line and line[0] == ' ':
+            print(f"[SUI] layout warning: '{line.strip()[:60]}' is indented "
+                  f"with spaces, not tabs -- it will be IGNORED (line {i + 1})")
         indent = len(line) - len(stripped)
         line = stripped.strip()
 

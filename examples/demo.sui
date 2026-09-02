@@ -85,16 +85,14 @@ def side_label():
 			.radius=10
 			.align_x=center
 			.click=toggle_side(toggle)
-		[1-brand]:
+		[22-brand]:
 			.texture=assets/logo.png
 			.texture_fit=contain
 			.color=None
-			.strength=22
-		[1-title-block]:
+		[40-title-block]:
 			.color=None
 			.vertical
 			.align_y=center
-			.strength=40
 			[1-subtitle]:
 				.text="MEDIA HUB"
 				.color=None
@@ -106,13 +104,12 @@ def side_label():
 				.text_color=ACCENT
 				.align_x=center
 				.padding=0
-		[1-eq]:
+		[28-eq]:
 			.anim=assets/anim
 			.anim_fps=18
 			.texture_fit=cover
 			.color=None
 			.border=2
-			.strength=28
 	[86-body]:
 		# side-by-side on wide windows; stacks vertically when narrow
 		.horizontal=calc(width > 860)

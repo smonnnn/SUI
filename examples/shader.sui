@@ -56,12 +56,11 @@ LINE =          (6, 46, 48, 255)
 		.padding=10
 		.radius=0
 		.hidden=calc(width < 700)
-		[1-h-title]:
+		[40-h-title]:
 			.color=None
 			.vertical
 			.align_y=center
 			.padding=0
-			.strength=40
 			[1-h-name]:
 				.text="SHADER LAB"
 				.color=None
@@ -73,14 +72,13 @@ LINE =          (6, 46, 48, 255)
 				.text_color=ACCENT
 				.align_x=center
 				.padding=0
-		[1-h-clock]:
+		[18-h-clock]:
 			.color=None
 			.text_color=ACCENT
 			.text=calc(clk())
 			.align_y=center
 			.align_x=right
 			.padding=10
-			.strength=18
 	[86-body]:
 		.horizontal=calc(width > 860)
 		.padding=0

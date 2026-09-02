@@ -55,7 +55,33 @@ The header is `[<strength>-<name>]:`.
   `click=`, etc.
 - **strength** — how much space the box gets *along its parent's axis*
   (a bigger number = more space, shared proportionally). Strength 100 is the
-  default.
+  default. It lives in the header only — `.strength=` is **not** a property.
+- **weight** — optional, a **single float**. Makes a child's share responsive to
+  the parent's size along the layout axis:
+
+  ```
+  effective strength = strength * (parent_axis / 800) ** weight
+  ```
+
+  `parent_axis` is the parent's inner height for a vertical parent, inner width
+  for a horizontal one, and 800 is a reference size. So:
+  - `weight=0` (or unset) — the fixed ratio from the header strengths, unchanged.
+  - `weight>0` — the box grows relatively on large parents.
+  - `weight<0` — the box grows relatively on small parents (handy for a
+    sidebar that takes a modest share on wide windows but dominates when narrow).
+
+  Example — a sidebar that holds 20/80 on wide windows but ~40/60 when the
+  parent narrows to 400px:
+
+  ```
+  [20-sidebar]:
+      .weight=-0.7
+  [80-main]: ...
+  ```
+
+  A plain number overrides the header strength (`weight=20` → strength 20, and
+  `weight=0` collapses the box). Weight applies to normal strength-split
+  layout, not `.scroll` containers (which use natural sizes).
 - `[5-bp.play]` — the part **before the dot** (`bp`) is a *group*; the part
   after the dot is the member. See *Shared groups* below.
 
@@ -83,9 +109,9 @@ that means `.vertical=True`). The commonly used ones:
 **Layout / size**
 ```
 .vertical / .horizontal      # stacking direction of children (default horizontal)
-.strength=30                 # proportional space along the parent's axis
 .padding=10                  # space inside the box (or .padding=(l,r,t,b))
 .margin=4                    # space outside the box (or .margin=(l,r,t,b))
+.weight=0.5                  # responsiveness exponent (a single float, see below)
 .align_x=center              # left | center | right (within parent)
 .align_y=center              # top | center | bottom
 .hidden=True                 # skip it (and its children)
@@ -99,6 +125,8 @@ that means `.vertical=True`). The commonly used ones:
 .anim=assets/anim            # an animation (sequence of frames), .anim_fps=18
 .video=assets/video.mp4      # a streaming video
 .shader=shaders/glass.frag   # a fragment shader fills the box
+.font=path/to/font.ttf       # a custom TTF/OTF for this box's text (all its
+                             # glyphs are loaded; paths resolve like media)
 .script=my_frame(box)        # python run every frame (e.g. custom drawing)
 ```
 
@@ -108,6 +136,7 @@ that means `.vertical=True`). The commonly used ones:
 .hover=my_handler(box)       # on hover
 .hover_color=ACCENT_SOFT     # hover highlight colour
 .selected_color=LINE         # while pressed/selected
+.adjust                      # drag it with the mouse to resize its strength
 ```
 
 Inline attributes are allowed after a header: `[1-inline]: .color=(0,0,0,255) .align_x=center`
@@ -213,6 +242,11 @@ and because the subgroups merge before the outer `btn` group, the styling is
 inherited everywhere and each variant keeps its own text. `.click` is unique
 per member, so it's never shared.
 
+**`calc(...)` values are exempt from sharing.** A `calc(...)` value is stored
+separately (a *function*), so it is *never* inherited or shared between group
+members — every member's `calc(...)` stays its own. Only plain values
+(`.text="x"`, `.color=…`, `.padding=…`) participate in sharing.
+
 > Tip: because inherited attributes are picked from whichever member declares
 > them, put the *shared* attributes on the **first** member of each group (and
 > reference a box by its full dotted name in `click=`/`hover=`).
@@ -278,6 +312,44 @@ needed.
   works — but name it right anyway (`plus.refract`).
 - **VS Code**: the `sui-extension/` in this repo gives highlighting + snippets
   for `.sui` files.
+
+---
+
+## Good to know (deeper gotchas)
+
+These are the non-obvious parts that cost real time if you don't know them:
+
+- **The `time` module is not shadowed** — the frame timestamp is exposed to
+  `calc()` as **`now`**, and the real `time` module stays importable, so
+  `time.time()` works in `@python`. Don't rely on a `time` variable in `calc`
+  (use `now`).
+- **Colour names are layout-only.** `ACCENT = (...)` is usable in attributes
+  (`.color=ACCENT`) but is *not* visible to `calc()`/`script=` — use a
+  `Color(r,g,b,a)` literal there.
+- **Box names in `script=`/`calc=`** — only `click=`/`hover=` resolve names to
+  Box objects. In a script use `box` (the box the script is on) or
+  `boxes["name"]`.
+- **The default font is ASCII-only.** `measure_text`/`draw_text` and
+  `load_font_ex(..., NULL, 0)` only rasterise ASCII — non-ASCII glyphs measure
+  width 0 and render as nothing. For symbols/emoji/accents set `.font=path`
+  (loads all the font's glyphs), and in scripts measure/draw with
+  `measure_text_ex`/`draw_text_ex` on that font. Note `measure_text` (default
+  font) won't match text the engine draws with a custom font.
+- **The root box is never painted** — the frame clears to white, so any gap not
+  covered by an opaque box (root padding, margins, transparent boxes) shows
+  white. Make the outermost box opaque and give it 0 margin/padding.
+- **`#` comments**: a `#` starts a comment except inside a quoted value
+  (`.text="50% # off"` is fine) and inside `@python` blocks.
+- **Render-thread discipline.** raylib texture creation / `load_video_into` /
+  `MEDIA.spawn_video` must happen on the render thread (a per-frame `.script`
+  is a good spot). Long/blocking work (ffmpeg, torrent downloads) goes on a
+  daemon thread that sets a flag the render thread polls. Native dialogs
+  (tkinter) can't open mid-frame — queue them with `after_frame(fn)`.
+- **Hot-reload resets spawned media.** Editing the layout keeps cached media
+  but *unloads* spawned ones — so an active torrent or a temp audio remux
+  resets to the default file. Editing `box.py`/`parser.py` needs a restart.
+- **`SUI_CAPTURE` screenshots are vertically flipped** (RenderTexture is
+  bottom-up); F12 screenshots are correct.
 
 ---
 

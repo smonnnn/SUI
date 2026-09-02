@@ -53,7 +53,8 @@ containers, textures/animations/video, and first-class Python integration
 - **Hover / selected colors** — `.hover_color` and `.selected_color`.
 - **Shared attribute groups** — boxes named like `item.home` form an `item` group;
   attributes appearing on only one member are inherited by the rest, while
-  attributes set on several stay unique per box.
+  attributes set on several stay unique per box. `calc(...)` values are stored
+  as functions and are **never** shared.
 - **Python everywhere** — `@python ... @end` blocks, `@import module`, `calc()`
   expressions, per-frame `script()` and `click=`/`hover=` callbacks share one
   namespace (which also exposes every box by name via `boxes[...]`).
@@ -112,12 +113,11 @@ examples/
   demo.sui        the main showcase layout (sidebar, pages, video player)
   flow.sui        "Flow Field" — a GPU flow field via frame feedback (fbm trails)
   shader.sui      "Shader Lab" — GPU fragment shaders rendered to a texture
-  shadertop.sui   a live shader wallpaper behind translucent widgets
   glassurf.sui    "Lens Control" — glassy lenses over the Waves wallpaper
+  player.sui      "Video Player" — plays any file via ffmpeg, streams torrents
+                  (libtorrent), and reads .cbz comics; emoji buttons via .font
   shaders/        shader sources (plasma, swirl, mandelbrot, waves, glass, frosted, flow)
-  test_layout_2.sui  a minimal original example
   assets/         final artwork committed here: logo.png + video.mp4
-  shaders/        .frag shaders (plasma, swirl, mandelbrot)
 ```
 
 Media paths in a layout are resolved relative to the layout file, so
@@ -142,14 +142,15 @@ ACCENT = (237, 163, 90, 255)
 ```
 
 The first number is the box's `strength` (used to divide space). `-` separates
-it from the name. Indentation (tabs) defines parent/child nesting. One property
-per line.
+it from the name. Strength is header-only — `.strength=` is **not** a property.
+Indentation (tabs) defines parent/child nesting. One property per line.
 
 ### Attributes
 
 | attribute        | example                    | notes |
 |------------------|----------------------------|-------|
 | `strength`/`number` | `[2-name]:`             | relative space |
+| `weight`         | `.weight=-0.7`           | responsiveness exponent: `effective = strength * (parent_axis/800) ** weight` — 0 = fixed ratio, >0 grows on large parents, <0 grows on small parents |
 | `text`           | `.text="Hello"`            | wrapped & auto-shrunk |
 | `color`          | `.color=PANEL`             | fill (or `None`) |
 | `border_color`   | `.border_color=LINE`       | |
@@ -167,9 +168,11 @@ per line.
 | `anim`           | `.anim=assets/anim`        | frame-loop animation (`.anim_fps`) |
 | `video`          | `.video=assets/video.mp4`  | streamed video (`.video_fps`) |
 | `shader`         | `.shader=shaders/plasma.frag` | fragment shader → texture (GPU video) |
+| `font`           | `.font=fonts/icon.ttf`  | custom TTF/OTF for this box's text (all its glyphs loaded, cached per path) |
 | `texture_fit`    | `.texture_fit=contain`     | stretch/contain/cover/tile |
 | `click`          | `.click=set_children(swap, content.home)` | click callback |
 | `hover`          | `.hover=...`               | hover callback |
+| `adjust`         | `.adjust`                  | drag the box with the mouse to resize its strength live |
 | `script`         | `.script=draw_circle(...)` | Python run every frame |
 | `hidden`         | `.hidden=calc(ratio < 1.0)` | visible/calc |
 
@@ -204,7 +207,7 @@ def clk():
 
 - `@python ... @end` — a block of real Python, available in the shared namespace.
 - `@import module` — import a module (e.g. `suifx`) and expose its public names.
-- `calc(expr)` — evaluate an expression (with `box`, `mouse`, `time`, `width`,
+- `calc(expr)` — evaluate an expression (with `box`, `mouse`, `now`, `width`,
   `height`, `ratio`, `boxes[...]` and all helpers in scope) and use the result.
 - `script=...` — run statements each frame (can call raylib draw functions via
   `box.rect`, `draw_rectangle`, ...).

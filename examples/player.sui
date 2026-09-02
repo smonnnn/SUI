@@ -1,0 +1,1044 @@
+# ===========================================================================
+#  SUI example — "Video Player"
+#  A full media player that will happily play ANY video file (mp4/avi/mov/
+#  mkv/webm/m4v/ogv/gif...):
+#    - streamed playback via ffmpeg (audio included)             .video=
+#    - floating controls that OVERLAY the picture: the scrub bar + transport
+#      bar are children of the video box (the video box has .color=BLACK so
+#      the letterbox sides are black), and they auto-hide after a couple of
+#      seconds of idle playback, coming back on any mouse movement
+#    - Play/Pause   (SPACE, the button, or a click on the picture)
+#    - scrub bar    (click to seek, drag to scrub)              media_scrub_drag
+#    - -5s / +5s    (or LEFT / RIGHT arrow keys)
+#    - Open file dialog, or drag a video onto the window
+#    - stream from a TORRENT (magnet link or .torrent): sequential download
+#      into a temp dir, then the growing video is loaded and played
+#      (needs the python libtorrent bindings)
+#    - a toggleable "PLAYBACK OPTIONS" sidebar that slides in on the right and
+#      lists the audio tracks and subtitle files found for the current video
+#    - subtitle rendering (wrapped, drawn over the picture)
+#    - volume slider + Mute   (also the M key)
+#    - fullscreen toggle      (also the F key)
+#    - live time / duration readout
+#
+#  Run:  python box.py examples/player.sui
+#  The bundled demo clip is examples/assets/video.mp4. Open your own video
+#  with "Open file..." or by dragging it onto the window. (A multi-audio or
+#  subtitled file will light up the Audio / Subtitles lists automatically.)
+#
+#  Control buttons use emoji glyphs from the Noto symbol fonts on this system
+#  (the UI font, FiraSans, has no media symbols).
+# ===========================================================================
+
+# ------ colors (same palette as the demo, plus black letterbox + HUD tints) ------
+BG =            (10, 20, 20, 255)
+PANEL =         (48, 66, 68, 255)
+PANEL_LIGHT =   (66, 90, 92, 255)
+ACCENT =        (237, 163, 90, 255)
+ACCENT_SOFT =   (254, 232, 217, 255)
+TEXT =          (240, 240, 230, 255)
+MUTED =         (150, 165, 160, 255)
+LINE =          (6, 52, 52, 255)
+BLACK =         (0, 0, 0, 255)         # video letterbox background
+HUD_TRACK =     (8, 28, 30, 220)       # translucent progress-track strip
+
+# ------ python: media helpers, track/subtitle discovery, overlay drawing ------
+@python
+import os
+import re
+import glob
+import tempfile
+import subprocess
+import threading
+import urllib.parse
+import time as _t
+import pyray as _pr
+
+# Everything below is discovered from the CURRENT video file, so this one
+# layout plays any file: multi-audio videos get an audio-track list, and files
+# that live next to .srt/.vtt subtitles get a subtitle list.
+AUDIO = {"path": None, "tracks": [], "current": 0, "busy": False, "done": None}
+SUBS  = {"files": [], "current": -1, "cues": []}
+UI    = {"panel": False, "last_move": None, "win_w": 1280, "win_h": 720}
+_last_sub_scan = {"path": None}
+
+def noop(box):
+    return True
+
+# ---- ffmpeg / stream discovery --------------------------------------------
+def _ffmpeg_bin():
+    import shutil
+    exe = os.environ.get("SUI_FFMPEG") or os.environ.get("IMAGEIO_FFMPEG_EXE")
+    if exe and os.path.exists(exe):
+        return exe
+    fd = shutil.which("ffmpeg") or shutil.which("ffmpeg.exe")
+    if fd:
+        return fd
+    try:
+        import imageio_ffmpeg
+        exe = imageio_ffmpeg.get_ffmpeg_exe()
+        if exe and os.path.exists(exe):
+            return exe
+    except Exception:
+        pass
+    return None
+
+def _video_path():
+    vbox = boxes.get("pvideo")
+    if vbox is not None and vbox.media is not None and vbox.media.player is not None:
+        return vbox.media.player.path
+    return None
+
+def _is_remux(path):
+    # audio-track switching re-muxes into a temp file; treat it as the same
+    # source so discovery below is never re-triggered on the temp file.
+    return path is not None and os.path.basename(path).startswith("sui_aud_")
+
+def probe_tracks(path):
+    ff = _ffmpeg_bin()
+    if not ff or not path or not os.path.exists(path):
+        return []
+    try:
+        out = subprocess.run([ff, "-i", path], capture_output=True, text=True,
+                             timeout=20).stderr
+    except Exception:
+        return []
+    tracks = []
+    for line in out.splitlines():
+        m = re.search(r"Stream\s+#0:(\d+)(?:\(([^)]+)\))?[^:]*?:\s*Audio:\s*(\S+)", line)
+        if m:
+            tracks.append({"index": int(m.group(1)),
+                           "lang": m.group(2) or None,
+                           "codec": m.group(3)})
+    return tracks
+
+def audio_tracks():
+    """Re-probe when the loaded video changes (open / drag-drop)."""
+    path = _video_path()
+    if path and not _is_remux(path) and path != AUDIO["path"]:
+        AUDIO["path"] = path
+        AUDIO["tracks"] = probe_tracks(path)
+        AUDIO["current"] = 0
+        files = sub_files()
+        SUBS["current"] = -1
+        # auto-pick a subtitle that matches the video's filename
+        base = os.path.splitext(os.path.basename(path))[0]
+        for f in files:
+            if os.path.splitext(os.path.basename(f))[0] == base:
+                SUBS["current"] = files.index(f)
+                SUBS["cues"] = parse_srt(f)
+                break
+    return AUDIO["tracks"]
+
+def audio_tag(i):
+    tr = audio_tracks()
+    if i < 0 or i >= len(tr):
+        return "none"
+    t = tr[i]
+    lang = t.get("lang") or ("Track %d" % (i + 1))
+    codec = t.get("codec") or ""
+    mark = "> " if AUDIO["current"] == i else "  "
+    return mark + lang + ("  [" + codec + "]" if codec else "")
+
+def audio_pick(box, idx):
+    tr = audio_tracks()
+    i = int(idx)
+    if not tr or i < 0 or i >= len(tr):
+        return True
+    AUDIO["current"] = i
+    if AUDIO["busy"] or not AUDIO["path"]:
+        return True
+    AUDIO["busy"] = True
+    AUDIO["done"] = None
+    threading.Thread(target=_remux_audio, args=(i,), daemon=True).start()
+    return True
+
+def audio_status():
+    return "switching audio..." if AUDIO.get("busy") else ""
+
+def _remux_audio(idx):
+    """Re-mux the current video keeping ONLY the chosen audio stream. Runs on a
+    worker thread so the UI never freezes; the result is loaded on the render
+    thread (see draw_video_overlay)."""
+    src = AUDIO["path"]
+    ff = _ffmpeg_bin()
+    if not src or not ff:
+        AUDIO["busy"] = False
+        return
+    stem = os.path.splitext(os.path.basename(src))[0]
+    tmp = os.path.join(tempfile.gettempdir(), "sui_aud_%d_%s.mp4" % (idx, stem))
+    ok = False
+    if not os.path.exists(tmp):
+        cmd = [ff, "-y", "-i", src, "-map", "0:v:0", "-map", "0:a:%d" % idx,
+               "-c:v", "copy", "-c:a", "aac", "-shortest", tmp]
+        try:
+            subprocess.run(cmd, capture_output=True, timeout=180)
+        except Exception:
+            AUDIO["busy"] = False
+            return
+    if os.path.exists(tmp):
+        ok = True
+    AUDIO["busy"] = False
+    AUDIO["done"] = tmp if ok else None
+
+# ---- subtitles -------------------------------------------------------------
+def sub_files():
+    path = _video_path()
+    if not path or _is_remux(path):
+        path = AUDIO["path"]
+    if not path:
+        return []
+    if _last_sub_scan["path"] != path:
+        _last_sub_scan["path"] = path
+        d = os.path.dirname(path)
+        files = []
+        if d and os.path.isdir(d):
+            files = sorted(glob.glob(os.path.join(d, "**", "*.srt"), recursive=True) +
+                           glob.glob(os.path.join(d, "**", "*.vtt"), recursive=True))
+        SUBS["files"] = [f for f in files if os.path.isfile(f)]
+    return SUBS["files"]
+
+def parse_srt(path):
+    """Parse a .srt/.vtt file into [(start, end, text), ...]."""
+    cues = []
+    if not path or not os.path.exists(path):
+        return cues
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            text = f.read()
+    except Exception:
+        return cues
+    for blk in re.split(r"\n\s*\n", text.strip()):
+        lines = [ln.strip() for ln in blk.splitlines() if ln.strip()]
+        tline = None
+        for ln in lines:
+            if "-->" in ln:
+                tline = ln
+                break
+        if not tline:
+            continue
+        m = re.match(r"(\d+):(\d+):(\d+)[,.](\d+)\s*-->\s*(\d+):(\d+):(\d+)[,.](\d+)", tline)
+        if not m:
+            continue
+        def ts(a, b, c, d):
+            return int(a) * 3600 + int(b) * 60 + int(c) + int(d) / 1000.0
+        i = lines.index(tline)
+        cues.append((ts(*m.groups()[:4]), ts(*m.groups()[4:]),
+                     "\n".join(lines[i + 1:])))
+    return cues
+
+def sub_tag(i):
+    files = sub_files()
+    if i < 0:
+        return ("> " if SUBS["current"] < 0 else "  ") + "Off"
+    if i < len(files):
+        base = os.path.splitext(os.path.basename(files[i]))[0]
+        return ("> " if SUBS["current"] == i else "  ") + base
+    return ""
+
+def sub_pick(box, idx):
+    i = int(idx)
+    files = sub_files()
+    if i < 0:
+        SUBS["current"] = -1
+        SUBS["cues"] = []
+    elif 0 <= i < len(files):
+        SUBS["current"] = i
+        SUBS["cues"] = parse_srt(files[i])
+    return True
+
+def subtitle_text():
+    """The subtitle active at the current playback position ('' if none)."""
+    cues = SUBS["cues"]
+    if not cues:
+        return ""
+    vbox = boxes.get("pvideo")
+    if vbox is None or vbox.media is None:
+        return ""
+    pos = media_pos(vbox)
+    for t0, t1, txt in cues:
+        if t0 <= pos < t1:
+            return txt
+    return ""
+
+# ---- torrent streaming (optional; needs python libtorrent bindings) ---------
+# Downloads a magnet/.torrent sequentially into a temp dir, then the growing
+# media file is loaded into the player. The sidebar lists the torrent's files
+# so you can pick which one to stream (best with AVI/MKV/WebM; an MP4 whose
+# moov atom is at the tail won't play until it's finished).
+TORRENT = {"status": "", "file": None, "ready": False, "loaded": False,
+           "dir": None, "handle": None, "files": [], "pick": -1, "last_pick": -1}
+
+def torrent_status():
+    return TORRENT.get("status") or ""
+
+def torrent_files():
+    return TORRENT.get("files") or []
+
+def torrent_file_tag(i):
+    files = torrent_files()
+    if i < 0 or i >= len(files):
+        return ""
+    path, sz, isv, _, isc = files[i]
+    name = os.path.basename(path)
+    mark = "> " if TORRENT.get("pick") == i else "  "
+    kind = "comic" if isc else ("video" if isv else "file")
+    return "%s%s  [%s %dMB]" % (mark, name, kind, max(1, sz // (1024 * 1024)))
+
+def torrent_pick(box, i):
+    files = torrent_files()
+    if 0 <= i < len(files):
+        TORRENT["pick"] = i     # worker applies it on its next loop
+    return True
+
+def torrent_open(box):
+    def _do():
+        try:
+            src = _torrent_prompt()
+        except Exception as e:
+            TORRENT["status"] = "prompt error: %s" % e
+            return
+        if src:
+            start_torrent(src)
+    after_frame(_do)
+    return True
+
+def _torrent_prompt():
+    import tkinter as tk
+    from tkinter import simpledialog, filedialog
+    root = tk.Tk()
+    root.withdraw()
+    root.attributes("-topmost", True)
+    src = simpledialog.askstring("Stream torrent",
+        "Paste a magnet link, or press Cancel to pick a .torrent file:",
+        parent=root)
+    if src and src.strip():
+        root.destroy()
+        return src.strip()
+    path = filedialog.askopenfilename(title="Open torrent",
+        filetypes=[("Torrent", "*.torrent"), ("All files", "*.*")], parent=root)
+    root.destroy()
+    return path or None
+
+def start_torrent(src):
+    TORRENT["status"] = "starting..."
+    TORRENT["file"] = None
+    TORRENT["ready"] = False
+    TORRENT["loaded"] = False
+    TORRENT["files"] = []
+    TORRENT["pick"] = -1
+    TORRENT["last_pick"] = -1
+    TORRENT["dir"] = tempfile.mkdtemp(prefix="sui_torrent_")
+    threading.Thread(target=_torrent_worker, args=(src, TORRENT["dir"]),
+                     daemon=True).start()
+
+def _apply_torrent_pick(h, flist, idx, dl_dir):
+    """Stream only file `idx`: prioritise it, forget the others, reset load."""
+    path, sz, isv, fi, _ = flist[idx]
+    for j in range(len(flist)):
+        h.file_priority(flist[j][3], 1 if j == idx else 0)
+    TORRENT["file"] = os.path.join(dl_dir, path)
+    TORRENT["ready"] = False
+    TORRENT["loaded"] = False
+
+def _torrent_first_piece(h, flist, idx):
+    try:
+        return int(h.torrent_file().map_file(flist[idx][3], 0, 1).piece)
+    except Exception:
+        return None
+
+def _torrent_stream_link(tp):
+    """A path load_video_into will accept: the file itself when it has a video
+    extension, otherwise a symlink with a .mkv extension (ffmpeg doesn't care
+    about the name, but the engine's extension gate does)."""
+    if os.path.splitext(tp)[1].lower() in (
+            ".mp4", ".m4v", ".avi", ".mov", ".webm", ".mkv", ".mpg",
+            ".mpeg", ".wmv", ".flv", ".ts", ".3gp", ".gif", ".ogv",
+            ".m2ts", ".mts", ".vob", ".rmvb", ".m2v", ".dv"):
+        return tp
+    link = tp + ".mkv"
+    try:
+        if not os.path.exists(link):
+            os.symlink(tp, link)
+        return link
+    except Exception:
+        return tp
+
+def _torrent_worker(src, dl_dir):
+    try:
+        import libtorrent as lt
+    except Exception:
+        TORRENT["status"] = "libtorrent not installed"
+        return
+    try:
+        ses = lt.session({"listen_interfaces": "0.0.0.0:6881",
+                          "enable_dht": True,
+                          "enable_lsd": True,
+                          "dht_bootstrap_nodes": "router.bittorrent.com:6881,"
+                                                 "dht.transmissionbt.com:6881,"
+                                                 "router.utorrent.com:6881"})
+        params = lt.add_torrent_params()
+        params.save_path = dl_dir
+        params.flags |= lt.torrent_flags.sequential_download
+        is_magnet = isinstance(src, str) and src.startswith("magnet:")
+        if is_magnet:
+            # this binding can't parse magnets via params.url, so pull the
+            # info-hash and trackers out of the magnet URI ourselves
+            m = re.search(r"btih:([0-9a-fA-F]{40})", src)
+            if m:
+                params.info_hash = lt.sha1_hash(m.group(1))
+            else:
+                params.url = src   # v2-only magnets: let libtorrent try
+            params.name = "torrent"
+            trs = re.findall(r"[?&]tr=([^&]+)", src)
+            if trs:
+                params.trackers = [urllib.parse.unquote(t) for t in trs]
+        else:
+            params.ti = lt.torrent_info(src)
+        h = ses.add_torrent(params)
+        TORRENT["handle"] = h
+        # magnet links need metadata from peers first; trackers (and DHT) are
+        # what find the peers, so give this a generous window
+        ntr = len(trs) if is_magnet else 0
+        t0 = _t.time()
+        while not h.status().has_metadata:
+            elapsed = int(_t.time() - t0)
+            if elapsed > 90:
+                break
+            TORRENT["status"] = "fetching metadata... %ds (%d trackers)" % (
+                elapsed, ntr)
+            _t.sleep(0.2)
+        if not h.status().has_metadata:
+            TORRENT["status"] = "metadata failed (no peers/trackers reachable?)"
+            return
+        # expose the torrent's files so the user can pick which to stream
+        files = h.torrent_file().files()
+        vids = (".mp4", ".avi", ".mkv", ".webm", ".mov", ".m4v", ".ogv",
+                ".wmv", ".mpg", ".mpeg", ".ts", ".flv", ".3gp", ".gif")
+        flist = [(files.file_path(i), files.file_size(i),
+                  files.file_path(i).lower().endswith(vids), i,
+                  _is_comic_path(files.file_path(i)))
+                 for i in range(files.num_files())]
+        TORRENT["files"] = flist
+        # default: the largest video, else the largest comic, else the first
+        best, bestsize = -1, -1
+        bestc, bestcsize = -1, -1
+        for idx, (p, sz, isv, _, isc) in enumerate(flist):
+            if isv and sz > bestsize:
+                best, bestsize = idx, sz
+            if isc and sz > bestcsize:
+                bestc, bestcsize = idx, sz
+        if best < 0 and bestc >= 0:
+            best = bestc
+        if best < 0 and flist:
+            best = 0
+        TORRENT["pick"] = best
+        TORRENT["last_pick"] = best
+        _apply_torrent_pick(h, flist, best, dl_dir)
+        TORRENT["status"] = "downloading..."
+        while True:
+            # did the user pick a different file?
+            if TORRENT["pick"] != TORRENT["last_pick"]:
+                TORRENT["last_pick"] = TORRENT["pick"]
+                _apply_torrent_pick(h, flist, TORRENT["pick"], dl_dir)
+            s = h.status()
+            pct = s.progress * 100.0
+            TORRENT["status"] = "%d%% (%.0f kB/s)" % (round(pct),
+                                                      s.download_rate / 1000.0)
+            if not TORRENT["ready"]:
+                piece = _torrent_first_piece(h, flist, TORRENT["pick"])
+                if piece is not None and h.have_piece(piece):
+                    # the chosen file's start is downloaded -> playable
+                    TORRENT["ready"] = True
+            if pct >= 100.0:
+                TORRENT["status"] = "complete"
+                while True:      # keep seeding so the file stays available
+                    _t.sleep(1.0)
+            _t.sleep(0.2)
+    except Exception as e:
+        TORRENT["status"] = "error: %s" % e
+
+# ---- comic books (.cbz/.zip of page images) --------------------------------
+# A torrented .cbz isn't a video; it's a zip of comic pages. We extract it to
+# a temp dir and page through it with the arrow keys / skip buttons.
+COMIC = {"dir": None, "pages": [], "page": 0, "textures": {}, "mode": False}
+COMIC_EXTS = (".cbz", ".zip")
+
+def _is_comic_path(p):
+    return p.lower().endswith(COMIC_EXTS)
+
+def _open_comic(path):
+    try:
+        import zipfile
+        out = tempfile.mkdtemp(prefix="sui_cbz_")
+        with zipfile.ZipFile(path) as z:
+            z.extractall(out)
+        pages = []
+        for root, _dirs, files in os.walk(out):
+            for f in sorted(files):
+                if f.lower().endswith((".jpg", ".jpeg", ".png", ".gif",
+                                       ".webp", ".bmp")):
+                    pages.append(os.path.join(root, f))
+        pages.sort()
+        if not pages:
+            return False
+        for t in COMIC.get("textures", {}).values():
+            try:
+                unload_texture(t)
+            except Exception:
+                pass
+        # stop any video currently attached to the player box
+        vbox = boxes.get("pvideo")
+        if vbox is not None and vbox._media is not None:
+            try:
+                vbox._media.unload()
+            except Exception:
+                pass
+            vbox._media = None
+        COMIC.update(dir=out, pages=pages, page=0, textures={}, mode=True)
+        return True
+    except Exception as e:
+        TORRENT["status"] = "comic error: %s" % e
+        return False
+
+def _comic_texture(idx):
+    if idx in COMIC["textures"]:
+        return COMIC["textures"][idx]
+    try:
+        t = load_texture(COMIC["pages"][idx])
+        COMIC["textures"][idx] = t
+        return t
+    except Exception:
+        return None
+
+def comic_nav(box, d):
+    """Skip button handler: page through a comic, else seek the video."""
+    if COMIC.get("mode"):
+        n = len(COMIC["pages"])
+        COMIC["page"] = max(0, min(n - 1, COMIC["page"] + int(d)))
+        return True
+    return seek_delta(box, float(d) * 5.0)
+
+def _draw_comic(box):
+    if is_key_pressed(KeyboardKey.KEY_LEFT):
+        COMIC["page"] = max(0, COMIC["page"] - 1)
+    if is_key_pressed(KeyboardKey.KEY_RIGHT):
+        COMIC["page"] = min(len(COMIC["pages"]) - 1, COMIC["page"] + 1)
+    pages = COMIC["pages"]
+    if not pages:
+        fs = max(16, int(box.rect.height * 0.05))
+        txt = "This comic has no images"
+        tw = measure_text(txt, fs)
+        draw_text(txt, int(box.rect.x + (box.rect.width - tw) / 2),
+                  int(box.rect.y + box.rect.height / 2 - fs / 2), fs,
+                  Color(200, 200, 200, 255))
+        return
+    idx = max(0, min(COMIC["page"], len(pages) - 1))
+    tex = _comic_texture(idx)
+    if tex is None:
+        return
+    tw, th = float(tex.width), float(tex.height)
+    x, y, w, h = _fit_rect(box, tw, th)
+    draw_texture_pro(tex, Rectangle(0, 0, tw, th), Rectangle(x, y, w, h),
+                     Vector2(0, 0), 0, WHITE)
+    fnt = _sub_font()
+    fs = max(12, int(h * 0.04))
+    label = "page %d / %d" % (idx + 1, len(pages))
+    bw = int(_tw(fnt, label, fs)) + 18
+    draw_rectangle_rounded(Rectangle(x + 10, y + 10, bw, fs + 14), 0.5, 6,
+                           Color(0, 0, 0, 160))
+    draw_text_ex(fnt, label, Vector2(x + 19, y + 14), fs, 1.2,
+                 Color(240, 240, 230, 230))
+
+# ---- time / volume ---------------------------------------------------------
+def fmt_time(t):
+    t = max(0.0, float(t or 0.0))
+    return "%d:%02d" % (int(t) // 60, int(t) % 60)
+
+def media_clock():
+    if COMIC.get("mode"):
+        n = len(COMIC["pages"])
+        return "p. %d/%d" % (COMIC["page"] + 1, n) if n else "empty"
+    vbox = boxes.get("pvideo")
+    if vbox is None or vbox.media is None:
+        return "0:00/0:00"
+    return "%s/%s" % (fmt_time(media_pos(vbox)), fmt_time(media_dur(vbox)))
+
+def vol_state():
+    vbox = boxes.get("pvideo")
+    if vbox is None or vbox.media is None or vbox.media.player is None:
+        return 1.0
+    return vbox.media.player._volume
+
+def vol_click(box, target):
+    m = target.media
+    if m and box.rect.width > 0:
+        mx = get_mouse_position().x
+        m.set_volume(max(0.0, min(1.0, (mx - box.rect.x) / box.rect.width)))
+    return True
+
+def vol_drag(box, target):
+    m = target.media
+    if not m or box.rect.width <= 0:
+        return True
+    mp = get_mouse_position()
+    if not (box.rect.x <= mp.x <= box.rect.x + box.rect.width and
+            box.rect.y <= mp.y <= box.rect.y + box.rect.height):
+        return True
+    if not is_mouse_button_down(MouseButton.MOUSE_BUTTON_LEFT):
+        return True
+    m.set_volume(max(0.0, min(1.0, (mp.x - box.rect.x) / box.rect.width)))
+    return True
+
+# ---- seeking / fullscreen / panel / auto-hide ------------------------------
+def seek_delta(box, d):
+    vbox = boxes.get("pvideo")
+    if vbox is None or vbox.media is None:
+        return True
+    t = media_pos(vbox) + float(d)
+    media_seek(vbox, max(0.0, min(media_dur(vbox), t)))
+    return True
+
+def toggle_fs(box):
+    # resize to the monitor first, then flip; restore the window size on exit
+    if is_window_fullscreen():
+        toggle_fullscreen()
+        set_window_size(UI["win_w"], UI["win_h"])
+    else:
+        UI["win_w"] = get_screen_width()
+        UI["win_h"] = get_screen_height()
+        mw = get_monitor_width(get_current_monitor())
+        mh = get_monitor_height(get_current_monitor())
+        set_window_size(mw, mh)
+        toggle_fullscreen()
+    return True
+
+def toggle_panel(box):
+    UI["panel"] = not UI["panel"]
+    return True
+
+def panel_open():
+    return UI["panel"]
+
+def ui_active():
+    """Should the floating controls (scrub + transport) be visible right now?"""
+    if UI["panel"]:
+        return True
+    vbox = boxes.get("pvideo")
+    if vbox is None or vbox.media is None or not vbox.media.active or not vbox.media.player:
+        return True                       # no video -> keep the controls
+    if not media_playing(vbox):
+        return True                       # paused -> keep the controls
+    if UI["last_move"] is None:
+        return True
+    if _t.time() - UI["last_move"] < 2.6:
+        return True
+    mp = get_mouse_position()
+    if mp.y > height * 0.78:              # cursor in the control zone
+        return True
+    return False
+
+# ---- subtitle font (a real TTF, nicer than raylib's default) ---------------
+_SUB_FONT = None
+
+def _sub_font():
+    global _SUB_FONT
+    if _SUB_FONT is None:
+        for c in ("/usr/share/fonts/Fira_Sans/FiraSans-Regular.ttf",
+                  "/usr/share/fonts/Adwaita/AdwaitaSans-Regular.ttf",
+                  "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+                  "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"):
+            if os.path.exists(c):
+                try:
+                    _SUB_FONT = load_font_ex(c, 48, _pr.ffi.NULL, 0)
+                    set_texture_filter(_SUB_FONT.texture,
+                                       TextureFilter.TEXTURE_FILTER_BILINEAR)
+                except Exception:
+                    _SUB_FONT = None
+                break
+        if _SUB_FONT is None:
+            _SUB_FONT = get_font_default()
+    return _SUB_FONT
+
+def _tw(fnt, text, fs, sp=1.2):
+    return measure_text_ex(fnt, text, fs, sp).x
+
+def _wrap(text, fnt, fs, maxw, sp=1.2):
+    words = text.split()
+    lines = []
+    cur = ""
+    for wd in words:
+        cand = (cur + " " + wd).strip()
+        if _tw(fnt, cand, fs, sp) <= maxw or not cur:
+            cur = cand
+        else:
+            lines.append(cur)
+            cur = wd
+    if cur:
+        lines.append(cur)
+    return lines
+
+def _draw_subs(txt, x, y, w, h):
+    fnt = _sub_font()
+    fs = max(14, int(h * 0.05))
+    sp = 1.2
+    lines = _wrap(txt, fnt, fs, int(w - 56), sp)
+    lh = int(fs * 1.4)
+    bw = min(int(w - 40), max(_tw(fnt, ln, fs, sp) for ln in lines) + 28)
+    bh = lh * len(lines) + 16
+    reserve = int(h * 0.16)               # keep clear of the floating controls
+    bx = x + (w - bw) / 2
+    by = y + h - bh - reserve
+    draw_rectangle_rounded(Rectangle(bx, by, bw, bh), 0.5, 8, Color(0, 0, 0, 160))
+    cy = by + 8
+    for ln in lines:
+        lw = _tw(fnt, ln, fs, sp)
+        draw_text_ex(fnt, ln, Vector2(int(x + (w - lw) / 2), int(cy)), fs, sp,
+                     Color(255, 255, 255, 240))
+        cy += lh
+
+def _draw_play_icon(x, y, w, h):
+    cx = x + w / 2
+    cy = y + h / 2
+    rr = min(w, h) * 0.16
+    draw_circle(int(cx), int(cy), rr, Color(0, 0, 0, 140))
+    draw_triangle(Vector2(cx - rr * 0.35, cy - rr * 0.55),
+                  Vector2(cx - rr * 0.35, cy + rr * 0.55),
+                  Vector2(cx + rr * 0.65, cy),
+                  Color(255, 255, 255, 235))
+
+def draw_video_overlay(box):
+    # auto-hide bookkeeping: any mouse movement wakes the floating controls
+    md = get_mouse_delta()
+    if md.x != 0.0 or md.y != 0.0:
+        UI["last_move"] = _t.time()
+    # load a streamed torrent file once it's big enough for ffmpeg to probe
+    # (must happen on the render thread, where raylib textures are created).
+    if TORRENT.get("ready") and not TORRENT.get("loaded"):
+        tp = TORRENT.get("file")
+        if not tp:
+            pass
+        elif not os.path.exists(tp):
+            TORRENT["status"] = "waiting for file..."
+        elif os.path.getsize(tp) < 256 * 1024 and TORRENT.get("status") != "complete":
+            pass                                  # still buffering
+        else:
+            now = _t.time()
+            if now - TORRENT.get("last_try", 0.0) > 2.0:
+                TORRENT["last_try"] = now
+                if _is_comic_path(tp):
+                    if _open_comic(tp):
+                        TORRENT["loaded"] = True
+                        TORRENT["status"] = "comic: %d pages" % len(COMIC["pages"])
+                    else:
+                        TORRENT["status"] = "can't open this comic"
+                else:
+                    src = _torrent_stream_link(tp)
+                    if load_video_into(box, src):
+                        TORRENT["loaded"] = True
+                        TORRENT["status"] = "streaming"
+                    else:
+                        TORRENT["status"] = "downloaded but can't open this file"
+    # apply a finished audio-track remux on the render thread (raylib textures)
+    if AUDIO.get("done"):
+        tmp = AUDIO["done"]
+        AUDIO["done"] = None
+        vbox = boxes.get("pvideo")
+        if vbox is not None and os.path.exists(tmp):
+            pos = media_pos(vbox)
+            playing = media_playing(vbox)
+            load_video_into(vbox, tmp)
+            if not playing:
+                media_pause(vbox)
+            if pos > 0:
+                media_seek(vbox, pos)
+    # comic mode takes over the whole picture
+    if COMIC.get("mode"):
+        _draw_comic(box)
+        return
+    # keyboard: SPACE play, arrows seek, M mute, P panel, F fullscreen, O open
+    if is_key_pressed(KeyboardKey.KEY_SPACE):
+        media_toggle(box)
+    if is_key_pressed(KeyboardKey.KEY_LEFT):
+        seek_delta(box, -5.0)
+    if is_key_pressed(KeyboardKey.KEY_RIGHT):
+        seek_delta(box, 5.0)
+    if is_key_pressed(KeyboardKey.KEY_M):
+        media_vol_toggle(box)
+    if is_key_pressed(KeyboardKey.KEY_P):
+        toggle_panel(box)
+    if is_key_pressed(KeyboardKey.KEY_O):
+        media_open(box)
+    if is_key_pressed(KeyboardKey.KEY_F):
+        toggle_fs(box)
+
+    m = box.media
+    has = bool(m and m.active and m.player)
+    vw, vh = 640, 360
+    if has:
+        try:
+            vw, vh = m.frame_size()
+        except Exception:
+            pass
+    x, y, w, h = _fit_rect(box, vw, vh)
+    if not has:
+        fs = max(16, int(h * 0.06))
+        txt = "Drop a video file here, or press Open file"
+        tw = measure_text(txt, fs)
+        by = y + (h - 44) / 2
+        draw_rectangle_rounded(Rectangle(x + (w - tw) / 2 - 20, by, tw + 40, 44),
+                               0.5, 8, Color(0, 0, 0, 150))
+        draw_text(txt, int(x + (w - tw) / 2), int(by + 8), fs,
+                  Color(240, 240, 230, 220))
+        return
+    # subtitles
+    sub = subtitle_text()
+    if sub:
+        _draw_subs(sub, x, y, w, h)
+    # paused overlay
+    if not media_playing(box):
+        _draw_play_icon(x, y, w, h)
+
+def _fit_rect(box, tw, th):
+    w = max(1.0, box.rect.width)
+    h = max(1.0, box.rect.height)
+    scale = min(w / tw, h / th)
+    dw, dh = tw * scale, th * scale
+    return (box.rect.x + (w - dw) / 2, box.rect.y + (h - dh) / 2, dw, dh)
+
+def draw_scrub(box, target):
+    d = media_dur(target)
+    p = media_pos(target)
+    f = (p / d) if d else 0.0
+    x = int(box.rect.x) + 3
+    y = int(box.rect.y) + 3
+    w = int(box.rect.width) - 6
+    h = int(box.rect.height) - 6
+    draw_rectangle(x, y, int(w * f), h, Color(237, 163, 90, 255))
+    draw_circle(x + int(w * f), y + h // 2, 6, Color(254, 232, 217, 255))
+    media_scrub_drag(box, target)
+
+def draw_vol(box, target):
+    v = vol_state()
+    x = int(box.rect.x) + 3
+    y = int(box.rect.y) + 3
+    w = int(box.rect.width) - 6
+    h = int(box.rect.height) - 6
+    draw_rectangle(x, y, int(w * v), h, Color(237, 163, 90, 255))
+    draw_circle(x + int(w * v), y + h // 2, 5, Color(254, 232, 217, 255))
+    vol_drag(box, target)
+@end
+
+# ------ default styling inherited by every box (all geometry zeroed) ------
+[4-default]:
+	.color=BG
+	.border_color=LINE
+	.text_color=TEXT
+	.horizontal
+	.padding=0
+	.margin=0
+	.border=1
+	.radius=0
+	.align_x=left
+	.align_y=top
+
+# ------ the player ------
+[1-root]:
+	.vertical
+	.color=BG
+	# the picture + its floating controls, and an optional settings sidebar
+	[10-stage]:
+		.horizontal
+		.color=None
+		# the video box is a vertical container; its children OVERLAY it:
+		# [spacer] pushes the floating scrub + transport bar to the bottom.
+		# Clicking the (transparent) spacer bubbles up -> media_toggle.
+		# Named 'pvideo' so dragging a file onto the window loads it.
+		[100-pvideo]:
+			.vertical
+			.texture_fit=contain
+			.color=BLACK
+			.click=media_toggle(pvideo)
+			.script=draw_video_overlay(box)
+			[1000-spacer]:
+				.color=None
+				.weight=1
+			[20-scrub]:
+				.color=HUD_TRACK
+				.click=media_seek_click(scrub, pvideo)
+				.script=draw_scrub(box, boxes["pvideo"])
+				.hidden=calc(not ui_active())
+			[50-bar]:
+				.horizontal
+				.click=noop(bar)
+				.hidden=calc(not ui_active())
+				[90-cplay]:
+					.color=ACCENT
+					.text_color=LINE
+					.align_x=center
+					.align_y=center
+					.text=calc("\ue037" if media_playing(boxes["pvideo"]) else "\ue034")
+					.font=/usr/share/fonts/ttf-material-symbols-variable/MaterialSymbolsRounded[FILL,GRAD,opsz,wght].ttf
+					.click=media_toggle(pvideo)
+				# ctr.* share styling (incl. the icon font); each keeps its own text/click
+				[62-ctr.prev]:
+					.color=PANEL_LIGHT
+					.text_color=LINE
+					.align_x=center
+					.align_y=center
+					.text="\ue045"
+					.font=/usr/share/fonts/ttf-material-symbols-variable/MaterialSymbolsRounded[FILL,GRAD,opsz,wght].ttf
+					.click=comic_nav(ctr.prev, -1)
+				[62-ctr.next]:
+					.text="\ue044"
+					.click=comic_nav(ctr.next, 1)
+				[112-ctime]:
+					.color=PANEL_LIGHT
+					.text_color=LINE
+					.align_x=center
+					.align_y=center
+					.text=calc(media_clock())
+				[70-ctr.mute]:
+					.text=calc("\ue04f" if vol_state() <= 0.0 else "\ue050")
+					.click=media_vol_toggle(pvideo)
+				[120-vol]:
+					.color=HUD_TRACK
+					.click=vol_click(vol, pvideo)
+					.script=draw_vol(box, boxes["pvideo"])
+				[92-ctr.fs]:
+					.text="\ue5d0"
+					.click=toggle_fs(ctr.fs)
+				[92-ctr.panel]:
+					.text="\ue8b8"
+					.click=toggle_panel(ctr.panel)
+		# optional settings sidebar, slides in on the right
+		[50-panel]:
+			.vertical
+			.scroll
+			.color=PANEL
+			.hidden=calc(not panel_open())
+			.weight=-1
+			.adjust
+			[1-pheader]:
+				.color=None
+				.text_color=ACCENT_SOFT
+				.text="PLAYBACK OPTIONS"
+			[1-pnote]:
+				.color=None
+				.text_color=MUTED
+				.text="Pick a track or subtitle for this file."
+			[1-pload]:
+				.text="Open file..."
+				.color=PANEL_LIGHT
+				.click=media_open(pvideo)
+			[1-ptorr]:
+				.text="Stream torrent..."
+				.color=PANEL_LIGHT
+				.click=torrent_open(ptorr)
+			[1-ptstatus]:
+				.color=None
+				.text_color=ACCENT
+				.text=calc(torrent_status())
+				.hidden=calc(torrent_status() == "")
+			[1-psec.torrent]:
+				.color=None
+				.text_color=ACCENT
+				.text="TORRENT FILES"
+				.padding=4
+				.hidden=calc(len(torrent_files()) == 0)
+			# tf.* share styling; each keeps its own text/click/hidden
+			[1-tf.0]:
+				.text=calc(torrent_file_tag(0))
+				.color=PANEL_LIGHT
+				.click=torrent_pick(tf.0, 0)
+				.hidden=calc(len(torrent_files()) < 1)
+			[1-tf.1]:
+				.text=calc(torrent_file_tag(1))
+				.click=torrent_pick(tf.1, 1)
+				.hidden=calc(len(torrent_files()) < 2)
+			[1-tf.2]:
+				.text=calc(torrent_file_tag(2))
+				.click=torrent_pick(tf.2, 2)
+				.hidden=calc(len(torrent_files()) < 3)
+			[1-tf.3]:
+				.text=calc(torrent_file_tag(3))
+				.click=torrent_pick(tf.3, 3)
+				.hidden=calc(len(torrent_files()) < 4)
+			[1-tf.4]:
+				.text=calc(torrent_file_tag(4))
+				.click=torrent_pick(tf.4, 4)
+				.hidden=calc(len(torrent_files()) < 5)
+			[1-tf.5]:
+				.text=calc(torrent_file_tag(5))
+				.click=torrent_pick(tf.5, 5)
+				.hidden=calc(len(torrent_files()) < 6)
+			[1-tf.6]:
+				.text=calc(torrent_file_tag(6))
+				.click=torrent_pick(tf.6, 6)
+				.hidden=calc(len(torrent_files()) < 7)
+			[1-tf.7]:
+				.text=calc(torrent_file_tag(7))
+				.click=torrent_pick(tf.7, 7)
+				.hidden=calc(len(torrent_files()) < 8)
+			[1-psec.audio]:
+				.color=None
+				.text_color=ACCENT
+				.text="AUDIO TRACKS"
+			[1-pnoaudio]:
+				.color=None
+				.text_color=MUTED
+				.text="No audio tracks in this file."
+				.hidden=calc(len(audio_tracks()) > 0)
+			# aud.* share styling; each keeps its own text/click/hidden
+			[1-aud.0]:
+				.text=calc(audio_tag(0))
+				.color=PANEL_LIGHT
+				.click=audio_pick(aud.0, 0)
+				.hidden=calc(len(audio_tracks()) < 1)
+			[1-aud.1]:
+				.text=calc(audio_tag(1))
+				.click=audio_pick(aud.1, 1)
+				.hidden=calc(len(audio_tracks()) < 2)
+			[1-aud.2]:
+				.text=calc(audio_tag(2))
+				.click=audio_pick(aud.2, 2)
+				.hidden=calc(len(audio_tracks()) < 3)
+			[1-paudstatus]:
+				.color=None
+				.text_color=MUTED
+				.text=calc(audio_status())
+				.hidden=calc(audio_status() == "")
+			[1-psec.sub]:
+				.color=None
+				.text_color=ACCENT
+				.text="SUBTITLES"
+			[1-pnosub]:
+				.color=None
+				.text_color=MUTED
+				.text="No .srt/.vtt found next to the video."
+				.hidden=calc(len(sub_files()) > 0)
+			# sub.* share styling; each keeps its own text/click/hidden
+			[1-sub.off]:
+				.text=calc(sub_tag(-1))
+				.color=PANEL_LIGHT
+				.click=sub_pick(sub.off, -1)
+			[1-sub.0]:
+				.text=calc(sub_tag(0))
+				.click=sub_pick(sub.0, 0)
+				.hidden=calc(len(sub_files()) < 1)
+			[1-sub.1]:
+				.text=calc(sub_tag(1))
+				.click=sub_pick(sub.1, 1)
+				.hidden=calc(len(sub_files()) < 2)
+			[1-sub.2]:
+				.text=calc(sub_tag(2))
+				.click=sub_pick(sub.2, 2)
+				.hidden=calc(len(sub_files()) < 3)
+			[1-psec.keys]:
+				.color=None
+				.text_color=ACCENT
+				.text="SHORTCUTS"
+			[1-pkeys]:
+				.color=None
+				.text_color=MUTED
+				.text="SPACE play/pause\nARROWS seek 5s  M mute\nF fullscreen  P panel  O open"

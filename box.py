@@ -215,12 +215,21 @@ class _StreamPlayer:
             with self._lock:
                 seek = self._seek
                 self._seek = None
-            if seek is not None and not self._playing:
-                # remember the seek until playback resumes
-                time.sleep(0.004)
-                continue
             if seek is not None:
+                # A seek always applies immediately: restart the decoder at the
+                # target. While paused, decode a single frame so the frozen
+                # picture (and the scrubber) jump to the new position too.
                 self._start_procs(seek)
+                if not self._playing:
+                    data = self._read_exact(self._vproc.stdout, need)
+                    if data:
+                        self._frames_read += 1
+                        with self._lock:
+                            self._frame = data
+                            self._frame_new = True
+                            self._pos = self._base + self._frames_read * self.frame_dur
+                    time.sleep(0.004)
+                    continue
             if not self._playing:
                 time.sleep(0.004)
                 continue
@@ -379,7 +388,8 @@ def _find_ffmpeg():
 
 
 _VIDEO_EXTS = (".mp4", ".m4v", ".avi", ".mov", ".webm", ".mkv", ".mpg", ".mpeg",
-               ".wmv", ".flv", ".ts", ".3gp", ".gif", ".ogv")
+               ".wmv", ".flv", ".ts", ".3gp", ".gif", ".ogv", ".m2ts", ".mts",
+               ".vob", ".rmvb", ".m2v", ".dv", ".ogm", ".asf", ".f4v")
 
 def _is_video_file(path):
     if os.path.isdir(path) or any(ch in path for ch in "*?["):
@@ -592,6 +602,8 @@ class Box:
     selected_color: Optional[Color] = None
     text_color: Optional[Color] = BLACK
     strength: int = 100
+    weight: Optional[float] = None   # .weight=... overrides strength (0 ok); None = unset
+    adjust: bool = False             # .adjust -> Ctrl+scroll tweaks strength live
     hidden: bool = False
     vertical: bool = False          # False = horizontal, True = vertical.
     padding: Vector4 = field(default_factory=lambda: Vector4(0, 0, 0, 0))  # l,r,t,b
@@ -614,6 +626,7 @@ class Box:
     texture: Texture = None
     shader: str = ""                 # fragment-shader file rendered to a texture
     script: str = ""                 # inline python executed every frame
+    font: Font = None                # per-box font (.font=path), else the default
     functions: dict = field(default_factory=lambda: {})
     _media: Media = None
     _desired: Vector2 = field(default_factory=lambda: Vector2(0, 0))
@@ -766,6 +779,25 @@ def _run_pending_open():
         print("[SUI] open failed:", e)
 
 
+# Generic "run this after the current frame" hook, so layouts can show native
+# dialogs (tkinter) without breaking the GLFW context mid-frame.
+_PENDING_AFTER = None
+
+def after_frame(fn):
+    global _PENDING_AFTER
+    _PENDING_AFTER = fn
+
+def _run_after_frame():
+    global _PENDING_AFTER
+    fn = _PENDING_AFTER
+    _PENDING_AFTER = None
+    if fn is not None:
+        try:
+            fn()
+        except Exception as e:
+            print("[SUI] after-frame error:", e)
+
+
 def add_children(parent, *children):
     for child in children:
         parent.children.append(child)
@@ -876,6 +908,108 @@ def _get_font():
 
 
 # ---------------------------------------------------------------------------
+# Per-box fonts (`.font=path`). load_font_ex() only rasterises the glyphs whose
+# codepoints we hand it (a NULL list falls back to plain ASCII), so a custom
+# font enumerates its own cmap table and loads every glyph it defines.
+# ---------------------------------------------------------------------------
+_BOX_FONTS: Dict[str, Optional[Font]] = {}
+
+def _font_codepoints(path):
+    """Return every codepoint the TTF/OTF defines (parsed from its cmap)."""
+    try:
+        with open(path, "rb") as f:
+            data = f.read()
+    except Exception:
+        return None
+    if len(data) < 12 or data[:4] not in (b"\x00\x01\x00\x00", b"OTTO"):
+        return None
+    num_tables = int.from_bytes(data[4:6], "big")
+    cmap_off = None
+    for i in range(num_tables):
+        off = 12 + i * 16
+        if data[off:off + 4] == b"cmap":
+            cmap_off = int.from_bytes(data[off + 8:off + 12], "big")
+            break
+    if cmap_off is None:
+        return None
+    num_sub = int.from_bytes(data[cmap_off + 2:cmap_off + 4], "big")
+    # Prefer a Windows Unicode subtable: (3,10) -> format 12, (3,1) -> format 4
+    best = None
+    for i in range(num_sub):
+        rec = cmap_off + 4 + i * 8
+        plat = data[rec:rec + 2]
+        enc = data[rec + 2:rec + 4]
+        sub_off = cmap_off + int.from_bytes(data[rec + 4:rec + 8], "big")
+        fmt = int.from_bytes(data[sub_off:sub_off + 2], "big")
+        if plat == b"\x00\x03" and enc == b"\x00\x0a":
+            best = (12, sub_off)
+            break
+        if plat == b"\x00\x03" and enc == b"\x00\x01" and best is None:
+            best = (4, sub_off)
+    if best is None:
+        for i in range(num_sub):
+            rec = cmap_off + 4 + i * 8
+            sub_off = cmap_off + int.from_bytes(data[rec + 4:rec + 8], "big")
+            fmt = int.from_bytes(data[sub_off:sub_off + 2], "big")
+            if fmt in (4, 12):
+                best = (fmt, sub_off)
+                break
+    if best is None:
+        return None
+    fmt, off = best
+    cps = set()
+    if fmt == 12:
+        ngroups = int.from_bytes(data[off + 12:off + 16], "big")
+        for g in range(ngroups):
+            r = off + 16 + g * 12
+            start = int.from_bytes(data[r:r + 4], "big")
+            end = int.from_bytes(data[r + 4:r + 8], "big")
+            for cp in range(start, end + 1):
+                cps.add(cp)
+    else:  # format 4
+        segx2 = int.from_bytes(data[off + 6:off + 8], "big")
+        endcodes = off + 14
+        startcodes = endcodes + segx2 + 2
+        for i in range(segx2 // 2):
+            end = int.from_bytes(data[endcodes + i * 2:endcodes + i * 2 + 2], "big")
+            start = int.from_bytes(data[startcodes + i * 2:startcodes + i * 2 + 2], "big")
+            if start == 0xFFFF and end == 0xFFFF:
+                continue
+            for cp in range(start, end + 1):
+                cps.add(cp)
+    return sorted(cps) if cps else None
+
+
+def _box_font(path):
+    """Load and cache a font for a box's .font attribute (with all its glyphs)."""
+    if path in _BOX_FONTS:
+        return _BOX_FONTS[path]
+    fnt = None
+    try:
+        cps = _font_codepoints(path)
+        if cps:
+            arr = _pr.ffi.new("int[]", cps)
+            fnt = load_font_ex(path, _FONT_SIZE, _pr.ffi.cast("int *", arr), len(cps))
+        else:
+            fnt = load_font_ex(path, _FONT_SIZE, _pr.ffi.NULL, 0)
+        set_texture_filter(fnt.texture, TextureFilter.TEXTURE_FILTER_BILINEAR)
+    except Exception:
+        fnt = None
+    _BOX_FONTS[path] = fnt
+    return fnt
+
+
+def _unload_box_fonts():
+    for fnt in _BOX_FONTS.values():
+        if fnt is not None:
+            try:
+                unload_font(fnt)
+            except Exception:
+                pass
+    _BOX_FONTS.clear()
+
+
+# ---------------------------------------------------------------------------
 # Script/expression evaluation with a rich namespace
 # ---------------------------------------------------------------------------
 _EVAL: Dict[str, Any] = {}
@@ -884,7 +1018,9 @@ def _refresh_ctx():
     try:
         _EVAL.update({
             "mouse": get_mouse_position(),
-            "time": time.time(),
+            # frame timestamp; the `time` module itself is left untouched so
+            # layout Python can still call time.time()
+            "now": time.time(),
             "width": get_screen_width(),
             "height": get_screen_height(),
             "ratio": get_screen_width() / max(1, get_screen_height()),
@@ -928,6 +1064,8 @@ def apply_functions(box: Box):
             value = str(value)
         elif fnname == "align_y":
             value = str(value)
+        elif fnname == "weight":
+            continue          # evaluated during layout with the parent context
         elif fnname == "text":
             value = str(value)
         try:
@@ -974,14 +1112,14 @@ def _text_block(box, width, height=100000):
     hit = d.get(key)
     if hit is not None and hit[0] == box.text:
         return hit[1], hit[2], hit[3], hit[4]
-    wrapped, fs = wrap_text(box.text, _get_font(), BASE_FONT_SIZE, SPACING, width, height)
-    sz = measure_text_ex(_get_font(), wrapped, fs, SPACING)
+    fnt = box.font or _get_font()
+    wrapped, fs = wrap_text(box.text, fnt, BASE_FONT_SIZE, SPACING, width, height)
+    sz = measure_text_ex(fnt, wrapped, fs, SPACING)
     d[key] = (box.text, wrapped, fs, sz.x, sz.y)
     return wrapped, fs, sz.x, sz.y
 
 def measure(box: Box, width) -> Vector2:
     """Natural (width, height) of a box constrained to `width`."""
-    font = _get_font()
     # Geometry that mirrors drawing: border -> padding -> rounded-safe content.
     rr = box.radius if box.radius > 0 else 0.0
     bw = max(1.0, width - box.border.x - box.border.y)
@@ -1413,7 +1551,8 @@ def _draw_text(box, x, y, w, h, clip):
     r = _scissor(clip)
     if r:
         begin_scissor_mode(int(r.x), int(r.y), int(r.width), int(r.height))
-    draw_text_ex(_get_font(), wrapped, Vector2(float(tx), float(ty)), fs, SPACING, color)
+    fnt = box.font or _get_font()
+    draw_text_ex(fnt, wrapped, Vector2(float(tx), float(ty)), fs, SPACING, color)
     if r:
         end_scissor_mode()
 
@@ -1421,22 +1560,46 @@ def _draw_text(box, x, y, w, h, clip):
 # ---------------------------------------------------------------------------
 # Layout + render
 # ---------------------------------------------------------------------------
+_WEIGHT_REF = 800.0
+
+def _effective_strength(c, paxis):
+    """A child's effective strength for layout. `.weight=X` (a single float)
+    makes the share responsive to the parent's axis length:
+
+        effective = strength * (paxis / 800) ** X
+
+    so X=0 keeps the fixed strength ratio (as before), X>0 grows the box's
+    share on large parents, and X<0 grows it on small parents."""
+    s = float(c.strength)
+    if c.weight is None or paxis <= 0:
+        return s
+    return max(0.0, s * (paxis / _WEIGHT_REF) ** c.weight)
+
+
 def _child_layout_normal(box, inner_x, inner_y, inner_w, inner_h):
     total_margin_w = sum((c.margin.x + c.margin.y) if is_visible(c) else 0 for c in box.children)
     total_margin_h = sum((c.margin.z + c.margin.w) if is_visible(c) else 0 for c in box.children)
     available_w = inner_w - total_margin_w
     available_h = inner_h - total_margin_h
-    divisor = sum(c.strength if is_visible(c) else 0 for c in box.children)
-    offset = 0.0
     vert = box.vertical
     if isinstance(vert, str):
         vert = bool(eval_in(box, vert))
+    # effective strengths: `.weight=X` scales a child's share with the parent's
+    # size along the layout axis (see _effective_strength)
+    paxis = (inner_h if vert else inner_w)
+    eff = {}
+    for c in box.children:
+        if is_visible(c):
+            eff[id(c)] = _effective_strength(c, paxis)
+    divisor = sum(eff.get(id(c), 0.0) for c in box.children if is_visible(c))
+    offset = 0.0
     for c in box.children:
         apply_functions(c)
         if not is_visible(c):
             c.rect = Rectangle(-100000, -100000, 0, 0)
             continue
-        fraction = c.strength / divisor if divisor > 0 else 0.0
+        s_eff = eff.get(id(c), float(c.strength))
+        fraction = s_eff / divisor if divisor > 0 else 0.0
         if vert:
             allocated_h = (available_h * fraction) + c.margin.z + c.margin.w
             c.rect.x = inner_x + c.margin.x
@@ -1679,6 +1842,101 @@ def _deepest_scrollable(box, point):
 # ---------------------------------------------------------------------------
 # Events
 # ---------------------------------------------------------------------------
+_ADJUST_DRAG = None
+_ADJUST_PRESS = None   # (box, start_pos) armed but not yet a drag
+
+def _adjust_strength_input(h):
+    """An `.adjust` box can be resized by dragging it with the mouse. Returns
+    True while a drag is active, so the caller can block hover/click actions.
+    The resize cursor only shows when Ctrl is held over an adjustable box."""
+    global _ADJUST_DRAG, _ADJUST_PRESS
+    box = h
+    target = None
+    while box is not None:
+        if box.adjust:
+            target = box
+            break
+        box = box.parent
+    ctrl = (is_key_down(KeyboardKey.KEY_LEFT_CONTROL)
+            or is_key_down(KeyboardKey.KEY_RIGHT_CONTROL))
+    if target is not None and ctrl:
+        axis = target.parent.vertical if target.parent else True
+        set_mouse_cursor(MouseCursor.MOUSE_CURSOR_RESIZE_NS if axis
+                         else MouseCursor.MOUSE_CURSOR_RESIZE_EW)
+    else:
+        set_mouse_cursor(MouseCursor.MOUSE_CURSOR_DEFAULT)
+    # release ends everything
+    if not is_mouse_button_down(MouseButton.MOUSE_BUTTON_LEFT):
+        _ADJUST_DRAG = None
+        _ADJUST_PRESS = None
+        return False
+    # a fresh press on an adjustable *frame* (not a clickable child) arms a drag
+    if (_ADJUST_PRESS is None
+            and is_mouse_button_pressed(MouseButton.MOUSE_BUTTON_LEFT)
+            and target is not None and h is not None
+            and "click" not in h.functions):
+        _ADJUST_PRESS = (target, get_mouse_position())
+    # a drag only starts once the cursor actually moves (so plain clicks don't
+    # collapse the box)
+    if _ADJUST_PRESS is not None and _ADJUST_DRAG is None:
+        _, start = _ADJUST_PRESS
+        mp = get_mouse_position()
+        if abs(mp.x - start.x) + abs(mp.y - start.y) > 4.0:
+            _ADJUST_DRAG = _ADJUST_PRESS[0]
+    if _ADJUST_DRAG is not None:
+        _drag_adjust(_ADJUST_DRAG)
+        return True   # block hover/click while dragging
+    return False
+
+
+def _drag_adjust(box):
+    """Set `box.strength` so its free edge follows the mouse. The maths inverts
+    the strength split (size = available * eff / (eff + others)) and undoes the
+    `.weight` exponent: strength = eff / (axis/800)**weight."""
+    parent = box.parent
+    if parent is None or not parent.children:
+        return
+    vert = parent.vertical
+    mp = get_mouse_position()
+    ix = parent.rect.x + parent.padding.x
+    iy = parent.rect.y + parent.padding.z
+    iw = max(1.0, parent.rect.width - parent.padding.x - parent.padding.y)
+    ih = max(1.0, parent.rect.height - parent.padding.z - parent.padding.w)
+    vis = [c for c in parent.children if is_visible(c)]
+    if box not in vis:
+        return
+    idx = vis.index(box)
+    inner = ih if vert else iw
+    m_start = box.margin.z if vert else box.margin.x
+    m_end = box.margin.w if vert else box.margin.y
+    total_marg = sum((c.margin.z + c.margin.w) if vert
+                     else (c.margin.x + c.margin.y) for c in vis)
+    available = inner - total_marg
+    if available <= 0:
+        return
+    pos = (mp.y - iy) if vert else (mp.x - ix)
+    divider = max(m_start + 1, min(inner - m_end - 1, pos))
+    if idx == 0:
+        target = divider - m_start - m_end            # drag the trailing edge
+    else:
+        target = (inner - m_end) - divider - m_start  # drag the leading edge
+    target = max(1.0, min(target, available - 1))
+    paxis = ih if vert else iw
+    other = sum(_effective_strength(c, paxis) for c in vis if c is not box)
+    if available - target <= 0:
+        eff = float("inf")
+    else:
+        eff = target * other / (available - target)
+    if box.weight is not None:
+        factor = (paxis / _WEIGHT_REF) ** box.weight
+        if factor and factor > 0:
+            eff = eff / factor
+    if eff == float("inf"):
+        box.strength = 10000
+    else:
+        box.strength = max(1, min(10000, int(round(eff))))
+
+
 def is_child_of(box: Box, pparent: Box):
     while box and box is not pparent:
         box = box.parent
@@ -1798,6 +2056,9 @@ def _resolve_param(p, boxes):
 def dict_to_box(box_dict: Dict[str, Any], boxes: Dict[str, Box]) -> Box:
     box = Box()
     box.strength = box_dict.get('strength', 100)
+    if 'weight' in box_dict:
+        box.weight = float(box_dict['weight'])
+    box.adjust = bool(box_dict.get('adjust', False))
     box.text = box_dict.get('text', '')
     box.hidden = box_dict.get('hidden', False)
     box.name = box_dict.get("name", "")
@@ -1858,6 +2119,8 @@ def dict_to_box(box_dict: Dict[str, Any], boxes: Dict[str, Box]) -> Box:
         box._media = MEDIA.get('anim', _resolve_media(box_dict['anim']), fps=box_dict.get('anim_fps', 8))
     if 'shader' in box_dict and box_dict['shader']:
         box.shader = _resolve_media(box_dict['shader'])
+    if 'font' in box_dict and box_dict['font']:
+        box.font = _box_font(_resolve_media(box_dict['font']))
 
     # callbacks
     for key in ('click', 'hover'):
@@ -2080,18 +2343,21 @@ def main():
         if is_file_dropped():
             _handle_dropped_video(_BOXES)
         h = trace_mouse(_ROOT)
-        if h is not hovering:
-            if not is_child_of(h, hovering):
-                hover(h, hovering)
-            hovering = h
-        if h and _point_in_view(h, get_mouse_position()):
-            if is_mouse_button_pressed(MouseButton.MOUSE_BUTTON_LEFT):
-                selected = h
-                click(selected)
+        _block = _adjust_strength_input(h)
+        if not _block:
+            if h is not hovering:
+                if not is_child_of(h, hovering):
+                    hover(h, hovering)
+                hovering = h
+            if h and _point_in_view(h, get_mouse_position()):
+                if is_mouse_button_pressed(MouseButton.MOUSE_BUTTON_LEFT):
+                    selected = h
+                    click(selected)
         end_drawing()
 
         _render_shader_pass()   # render shaders to their textures (out of frame)
         _run_pending_open()   # native file dialog, safely outside the frame
+        _run_after_frame()    # generic layout after-frame hook
 
         if _RELOAD_REQUEST.is_set():
             _RELOAD_REQUEST.clear()
@@ -2120,6 +2386,7 @@ def main():
 
     MEDIA.unload_all()
     _unload_shaders()
+    _unload_box_fonts()
     try:
         close_audio_device()
     except Exception:
