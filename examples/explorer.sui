@@ -105,9 +105,24 @@ def _fsize(n):
         n /= 1024.0
 
 def _fdate(mt):
+    """Relative time: pick the largest unit (years/months/days/hours/minutes/
+    seconds) and say how long ago the file was modified."""
     if not mt:
         return ""
-    return datetime.datetime.fromtimestamp(mt).strftime("%Y-%m-%d %H:%M")
+    diff = max(0.0, datetime.datetime.now().timestamp() - mt)
+    units = (
+        (31536000.0, "year"),
+        (2592000.0, "month"),
+        (86400.0, "day"),
+        (3600.0, "hour"),
+        (60.0, "minute"),
+        (1.0, "second"),
+    )
+    for span, name in units:
+        if diff >= span:
+            n = int(diff // span)
+            return "%d %s%s ago" % (n, name, "" if n == 1 else "s")
+    return "just now"
 
 def refresh():
     """List the current directory, dirs first."""
@@ -206,6 +221,23 @@ def _mk_text(text, strength, ax, ay):
     b.color = None
     return b
 
+# ---- responsive columns: hide SIZE / MODIFIED when the list is too narrow ---
+def _flist_w():
+    fl = boxes.get("flist")
+    return fl.rect.width if fl is not None else 0.0
+
+def show_size():
+    return _flist_w() >= 420
+
+def show_date():
+    return _flist_w() >= 640
+
+def hide_size():
+    return not show_size()
+
+def hide_date():
+    return not show_date()
+
 def rebuild_rows():
     """Create the fixed pool of row boxes + spacers (called once at init)."""
     lbox = boxes.get("flist")
@@ -228,13 +260,15 @@ def rebuild_rows():
         r.size = Vector2(0, 36)             # fixed row height
         icon = Box()
         icon.font = ICON_FONT
-        icon.strength = 2
+        icon.strength = 1
         icon.align_x = "center"
         icon.align_y = "center"
         icon.color = None
         name = _mk_text("", 7, "left", "center")
-        size = _mk_text("", 3, "right", "center")
-        date = _mk_text("", 4, "right", "center")
+        size = _mk_text("", 3, "left", "center")
+        size.functions = {"hidden": "hide_size()"}
+        date = _mk_text("", 4, "left", "center")
+        date.functions = {"hidden": "hide_date()"}
         r.children = [icon, name, size, date]
         for ch in r.children:
             ch.parent = r
@@ -525,7 +559,7 @@ def keys_tick(box):
 			.text=calc(path_text())
 			.color=None
 			.text_color=TEXT
-			.align_x=center
+			.align_x=left
 			.align_y=center
 			.padding=0
 		# tb.* share styling; each keeps its own text/click
@@ -559,7 +593,7 @@ def keys_tick(box):
 			.font=/usr/share/fonts/ttf-material-symbols-variable/MaterialSymbolsRounded[FILL,GRAD,opsz,wght].ttf
 			.color=None
 			.align_y=center
-		[6-squery]:
+		[12-squery]:
 			.text=calc(search_text())
 			.color=None
 			.text_color=TEXT
@@ -618,24 +652,26 @@ def keys_tick(box):
 			[1-cols]:
 				.horizontal
 				.color=PANEL
-				[2-col.icon]:
+				[1-col.icon]:
 					.color=None
+					.align_x=left
 				[7-col.name]:
 					.text="NAME"
 					.color=None
 					.text_color=MUTED
 					.align_y=center
+					.align_x=left
 				[3-col.size]:
 					.text="SIZE"
 					.color=None
 					.text_color=MUTED
-					.align_x=right
+					.align_x=left
 					.align_y=center
 				[4-col.date]:
 					.text="MODIFIED"
 					.color=None
 					.text_color=MUTED
-					.align_x=right
+					.align_x=left
 					.align_y=center
 			[25-flist]:
 				.vertical

@@ -876,9 +876,9 @@ def wrap_text(text, font, font_size, spacing, max_width, max_height, shrink_font
     original_text = text
     wrap_chars = [" ", ".", "-", "_", "/", "\\"]
     if min_font is None:
-        # stop shrinking at roughly half size — below that the text is hard to
-        # read, so we truncate instead
-        min_font = max(10, font_size // 2)
+        # stop shrinking at roughly 3/4 size — below that the text gets hard to
+        # read, so we truncate earlier at a larger, more legible size
+        min_font = max(12, font_size * 3 // 4)
 
     def build():
         """Wrap original_text at the current font size into lines."""
@@ -909,23 +909,17 @@ def wrap_text(text, font, font_size, spacing, max_width, max_height, shrink_font
              for w in re.split(r"[ .\-_/\\]+", original_text) if w),
             default=0.0)
 
-    def line_height():
-        return measure_text_ex(font, "Ag", font_size, spacing).y or font_size
-
+    # Wrap first, then shrink the font until the wrapped text fits the box
+    # (width: the longest word; height: the total wrapped height, which already
+    # accounts for the number of lines). Truncation is the last resort, applied
+    # only when the font has shrunk to min_font and it still doesn't fit.
     while True:
         wrapped_text = build()
         text_size = measure_text_ex(font, wrapped_text, font_size, spacing)
         lw = longest_word()
-        n_lines = wrapped_text.count("\n") + 1
-        max_lines = max(1, int(max_height / max(line_height(), 1))) if max_height > 0 else n_lines
-        # height can be solved by truncation only if more than one line must go
-        fits_height = text_size.y <= max_height
         fits_width = lw <= max_width
-        # once shrinking would get unreadable, stop (a later pass truncates);
-        # but a single line that still doesn't fit can't be truncated, so keep
-        # shrinking it as before.
-        stop_for_height = (font_size <= min_font and n_lines > max_lines and max_lines >= 1)
-        if (fits_height and fits_width) or font_size <= 1 or not shrink_font or stop_for_height:
+        fits_height = text_size.y <= max_height
+        if (fits_width and fits_height) or font_size <= min_font or not shrink_font:
             break
         font_size -= 1
 
@@ -1264,12 +1258,24 @@ def measure(box: Box, width) -> Vector2:
             want.y = max(want.y, child_h)
             want.x = max(want.x, child_w)
         else:
+            # Horizontal children are laid out by strength fraction of the
+            # parent's inner width (see _child_layout_normal). Measure each
+            # child at its *fraction* of the width, not the whole width, so
+            # wrapped text is sized the same way it will actually be drawn
+            # (otherwise a narrow column is measured as a wide one, the parent
+            # stays short, and the real draw-time wrap gets truncated).
+            vis = [c for c in box.children if is_visible(c)]
+            paxis = inner_w
+            eff = {id(c): _effective_strength(c, paxis) for c in vis}
+            divisor = sum(eff.values()) or 1.0
+            total_margin_w = sum(c.margin.x + c.margin.y for c in vis)
+            avail_w = max(0.0, inner_w - total_margin_w)
             child_w = 0.0
             child_h = 0.0
-            for c in box.children:
-                if not is_visible(c):
-                    continue
-                s = measure(c, inner_w - c.margin.x - c.margin.y)
+            for c in vis:
+                frac = eff[id(c)] / divisor
+                alloc_w = (avail_w * frac) + c.margin.x + c.margin.y
+                s = measure(c, max(1.0, alloc_w - c.margin.x - c.margin.y))
                 child_w += s.x + c.margin.x + c.margin.y
                 child_h = max(child_h, s.y + c.margin.z + c.margin.w)
             want.x = max(want.x, child_w)
