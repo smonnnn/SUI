@@ -1,0 +1,689 @@
+# ===========================================================================
+#  SUI example — "File Explorer"
+#  A filesystem browser built on the same patterns as player.sui:
+#    - the file LIST is rebuilt at runtime: rows are Box objects created in
+#      python and set_children()'d into the scroll container, so it can hold
+#      ANY number of entries (no fixed row count)
+#    - each row draws itself with a per-frame script (icon + name + size +
+#      date, column-aligned like a real file manager) while the row BOX still
+#      provides the click target and hover highlight
+#    - keyboard: Up/Down move the selection, Enter opens, Backspace goes up,
+#      O opens a file with the OS handler (xdg-open)
+#    - selecting a video streams it in the preview pane via ffmpeg
+#      (load_video_into), images are shown as textures, everything else shows
+#      file details
+#    - quick-location sidebar navigates with the same shared-group styling
+#      used by player.sui's item.* / aud.* rows
+#
+#  Run:  python box.py examples/explorer.sui
+# ===========================================================================
+
+# ------ colors (same palette as player.sui) ------
+BG =            (10, 20, 20, 255)
+PANEL =         (48, 66, 68, 255)
+PANEL_LIGHT =   (66, 90, 92, 255)
+ACCENT =        (237, 163, 90, 255)
+ACCENT_SOFT =   (254, 232, 217, 255)
+TEXT =          (240, 240, 230, 255)
+MUTED =         (150, 165, 160, 255)
+LINE =          (6, 52, 52, 255)
+BLACK =         (0, 0, 0, 255)
+
+# ------ python: filesystem state, list building, preview, drawing ------
+@python
+import os
+import time as _t
+import datetime
+import threading
+import subprocess
+import pyray as _pr
+
+ICON_FONT_PATH = "/usr/share/fonts/ttf-material-symbols-variable/MaterialSymbolsRounded[FILL,GRAD,opsz,wght].ttf"
+
+# UI state. entries[] is refreshed on every navigation; the list rows are
+# rebuilt from it (set_children), so any number of files is supported.
+FS = {
+    "cwd": os.path.expanduser("~"),
+    "all": [],          # full listing of the current directory
+    "entries": [],      # listing after the search filter (what rows show)
+    "sel": -1,
+    "status": "",
+    "top": 0,           # first visible entry index (virtualized list)
+    "need_init": True,
+}
+PREVIEW = {"path": None, "kind": None, "tex": None}
+SEARCH = {"q": "", "active": False}
+
+# ---- colors for python drawing (Color literals, not layout names) ----
+# Built lazily: the layout's @python runs before the engine's raylib globals
+# are merged into the namespace, so Color() must only be constructed at call
+# time (inside a function), never at module level.
+_COLORS = None
+def _C():
+    global _COLORS
+    if _COLORS is None:
+        _COLORS = {
+            "accent":      Color(237, 163, 90, 255),
+            "accent_soft": Color(254, 232, 217, 255),
+            "text":        Color(240, 240, 230, 255),
+            "muted":       Color(150, 165, 160, 255),
+            "line":        Color(6, 52, 52, 255),
+            "panel_light": Color(66, 90, 92, 255),
+            "black":       Color(0, 0, 0, 255),
+        }
+    return _COLORS
+
+# material-symbols glyphs for file/dir type icons
+ICONS = {
+    "dir":   "\ue2c7",   # folder
+    "video": "\ue02c",   # movie
+    "image": "\ue3f4",   # image
+    "music": "\ue405",   # music_note
+    "doc":   "\ue873",   # description
+    "file":  "\ue24d",   # insert_drive_file
+}
+
+def _kind(path):
+    e = os.path.splitext(path)[1].lower()
+    if e in (".mp4", ".mkv", ".avi", ".mov", ".webm", ".m4v", ".ogv", ".mpg",
+             ".mpeg", ".wmv", ".flv", ".ts", ".3gp", ".gif", ".m2ts", ".mts",
+             ".vob", ".rmvb", ".m2v"):
+        return "video"
+    if e in (".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".tif", ".tiff"):
+        return "image"
+    if e in (".mp3", ".wav", ".flac", ".ogg", ".aac", ".m4a", ".opus"):
+        return "music"
+    if e in (".txt", ".md", ".pdf", ".doc", ".docx", ".rtf", ".odt", ".py",
+             ".json", ".sui", ".html", ".css", ".js", ".csv"):
+        return "doc"
+    return "file"
+
+def _fsize(n):
+    for u in ("B", "KB", "MB", "GB", "TB"):
+        if n < 1024 or u == "TB":
+            return ("%.0f %s" % (n, u)) if u == "B" else ("%.1f %s" % (n, u))
+        n /= 1024.0
+
+def _fdate(mt):
+    if not mt:
+        return ""
+    return datetime.datetime.fromtimestamp(mt).strftime("%Y-%m-%d %H:%M")
+
+def refresh():
+    """List the current directory, dirs first."""
+    try:
+        names = sorted(os.listdir(FS["cwd"]), key=lambda s: s.lower())
+    except Exception as ex:
+        FS["all"] = []
+        FS["entries"] = []
+        FS["status"] = "cannot read: %s" % ex
+        return
+    ent = []
+    for n in names:
+        p = os.path.join(FS["cwd"], n)
+        try:
+            isd = os.path.isdir(p)
+            if isd:
+                k, sz, mt = "dir", 0, 0
+            else:
+                k = _kind(p)
+                sz = os.path.getsize(p)
+                mt = os.path.getmtime(p)
+        except Exception:
+            isd, k, sz, mt = False, "file", 0, 0
+        ent.append({
+            "name": n, "path": p, "is_dir": isd, "kind": k,
+            "size": "" if isd else _fsize(sz),
+            "date": _fdate(mt),
+            "icon": ICONS["dir"] if isd else ICONS.get(k, ICONS["file"]),
+        })
+    ent.sort(key=lambda e: (not e["is_dir"], e["name"].lower()))
+    FS["all"] = ent
+    FS["status"] = "%d items" % len(ent)
+    _apply_filter()
+
+# ---- search / filter ------------------------------------------------------
+def _apply_filter():
+    q = SEARCH["q"].lower().strip()
+    if q:
+        FS["entries"] = [e for e in FS["all"] if q in e["name"].lower()]
+        FS["status"] = "%d of %d items" % (len(FS["entries"]), len(FS["all"]))
+    else:
+        FS["entries"] = list(FS["all"])
+        FS["status"] = "%d items" % len(FS["all"])
+    FS["sel"] = -1
+    lbox = boxes.get("flist")
+    if lbox is not None:
+        lbox.scroll_offset.y = 0
+
+def toggle_search(box):
+    SEARCH["active"] = not SEARCH["active"]
+    if not SEARCH["active"]:
+        SEARCH["q"] = ""
+        _apply_filter()
+    return True
+
+def search_active():
+    return SEARCH["active"]
+
+def search_text():
+    q = SEARCH["q"]
+    if int(_t.time() * 2) % 2 == 0:
+        q += "_"
+    return q or "search..."
+
+def search_keys(box):
+    """Read typed characters into the query while the search bar is shown."""
+    if not SEARCH["active"]:
+        return True
+    c = get_char_pressed()
+    if c:
+        SEARCH["q"] += chr(c)
+        _apply_filter()
+    if is_key_pressed(KeyboardKey.KEY_BACKSPACE):
+        SEARCH["q"] = SEARCH["q"][:-1]
+        _apply_filter()
+    if is_key_pressed(KeyboardKey.KEY_ENTER) or is_key_pressed(KeyboardKey.KEY_KP_ENTER) \
+            or is_key_pressed(KeyboardKey.KEY_ESCAPE):
+        SEARCH["active"] = False
+    return True
+
+# ---- the list: a VIRTUALIZED, fixed pool of row boxes ----------------------
+# A scroll container measures/renders every child every frame, so we never
+# create one box per entry (11k+ boxes was the bottleneck). Instead a fixed
+# pool of NROWS row boxes is re-pointed at the entries near the scroll top
+# every frame, and lead/tail spacer boxes fake the full content extent so the
+# wheel/scrollbar still span the whole list.
+NROWS = 40
+ROW_H = 50   # measured row height incl. margins (size.y=36 + radius 6 + margin 2)
+
+def _mk_text(text, strength, ax, ay):
+    b = Box()
+    b.text = text
+    b.strength = strength
+    b.align_x = ax
+    b.align_y = ay
+    b.color = None
+    return b
+
+def rebuild_rows():
+    """Create the fixed pool of row boxes + spacers (called once at init)."""
+    lbox = boxes.get("flist")
+    if lbox is None:
+        return
+    _load_fonts()
+    lead = Box()
+    lead.name = "flead"
+    lead.color = None
+    tail = Box()
+    tail.name = "ftail"
+    tail.color = None
+    rows = []
+    for i in range(NROWS):
+        r = Box()
+        r.name = "frow%d" % i
+        r.vertical = False                  # horizontal row
+        r.radius = 6
+        r.margin = Vector4(0, 0, 1, 1)
+        r.size = Vector2(0, 36)             # fixed row height
+        icon = Box()
+        icon.font = ICON_FONT
+        icon.strength = 2
+        icon.align_x = "center"
+        icon.align_y = "center"
+        icon.color = None
+        name = _mk_text("", 7, "left", "center")
+        size = _mk_text("", 3, "right", "center")
+        date = _mk_text("", 4, "right", "center")
+        r.children = [icon, name, size, date]
+        for ch in r.children:
+            ch.parent = r
+        r.onclick = (lambda i=i: entry_click(i))
+        rows.append(r)
+    FS["rows"] = rows
+    FS["lead"] = lead
+    FS["tail"] = tail
+    set_children(lbox, lead, *rows, tail)
+
+def paint_rows(box):
+    """Re-point the pooled rows at the entries near the current scroll top."""
+    n = len(FS["entries"])
+    sc = box.scroll_offset.y
+    top = min(max(0, int(sc // ROW_H)), max(0, n - NROWS))
+    FS["top"] = top
+    c = _C()
+    lead_h = top * ROW_H
+    tail_h = max(0, n * ROW_H - top * ROW_H - NROWS * ROW_H)
+    FS["lead"].size = Vector2(0, lead_h)
+    FS["tail"].size = Vector2(0, tail_h)
+    mp = get_mouse_position()
+    for i, r in enumerate(FS["rows"]):
+        idx = top + i
+        e = FS["entries"][idx] if idx < n else None
+        sel = (idx == FS["sel"])
+        icon, name, size, date = r.children
+        if e is None:
+            r.size = Vector2(0, 0)
+            r.radius = 0
+            r.margin = Vector4(0, 0, 0, 0)
+            icon.text = name.text = size.text = date.text = ""
+            continue
+        r.size = Vector2(0, 36)
+        r.radius = 6
+        r.margin = Vector4(0, 0, 1, 1)
+        icon.text = e["icon"]
+        name.text = e["name"]
+        size.text = e["size"]
+        date.text = e["date"]
+        if sel:
+            r.color = c["accent"]
+            icon.text_color = c["line"]
+            name.text_color = c["line"]
+            size.text_color = c["line"]
+            date.text_color = c["line"]
+        else:
+            r.color = None
+            icon.text_color = c["accent"] if e["is_dir"] else c["muted"]
+            name.text_color = c["text"]
+            size.text_color = c["muted"]
+            date.text_color = c["muted"]
+        # hover highlight (rects are from last frame's layout = current scroll)
+        if (r.rect.x <= mp.x <= r.rect.x + r.rect.width and
+                r.rect.y <= mp.y <= r.rect.y + r.rect.height):
+            r.color = c["panel_light"] if not sel else c["accent"]
+
+def entry_click(i):
+    idx = FS["top"] + i
+    if not (0 <= idx < len(FS["entries"])):
+        return True
+    FS["sel"] = idx
+    e = FS["entries"][idx]
+    if e["is_dir"]:
+        cd(e["path"])                    # a click on a folder enters it
+    return True
+
+def cd(path):
+    target = os.path.abspath(os.path.expanduser(path))
+    if not os.path.isdir(target):
+        FS["status"] = "not a directory: %s" % target
+        return
+    FS["cwd"] = target
+    FS["sel"] = -1
+    SEARCH["q"] = ""
+    SEARCH["active"] = False
+    _clear_preview()
+    refresh()
+
+def go_up(box):
+    p = os.path.dirname(FS["cwd"])
+    if p and p != FS["cwd"]:
+        cd(p)
+    return True
+
+def go_home(box):
+    cd(os.path.expanduser("~"))
+    return True
+
+def go_refresh(box):
+    refresh()
+    return True
+
+# Quick-location sidebar: handlers can only take box names / numbers, so the
+# destinations live here and the layout passes an index (see the side.* clicks).
+QUICK = [
+    ("Home", os.path.expanduser("~")),
+    ("Desktop", os.path.expanduser("~/Desktop")),
+    ("Documents", os.path.expanduser("~/Documents")),
+    ("Downloads", os.path.expanduser("~/Downloads")),
+    ("Pictures", os.path.expanduser("~/Pictures")),
+    ("Music", os.path.expanduser("~/Music")),
+    ("Videos", os.path.expanduser("~/Videos")),
+    ("Root", "/"),
+]
+
+def nav(box, idx):
+    if 0 <= int(idx) < len(QUICK):
+        cd(QUICK[int(idx)][1])
+    return True
+
+def open_external(box):
+    e = FS["entries"][FS["sel"]] if 0 <= FS["sel"] < len(FS["entries"]) else None
+    if e is None or e["is_dir"]:
+        return True
+    def _do():
+        try:
+            subprocess.Popen(["xdg-open", e["path"]],
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception:
+            pass
+    threading.Thread(target=_do, daemon=True).start()
+    return True
+
+def path_text():
+    return FS["cwd"]
+
+def status_text():
+    e = FS["entries"][FS["sel"]] if 0 <= FS["sel"] < len(FS["entries"]) else None
+    base = FS.get("status") or ""
+    if e is None:
+        return base
+    return "%s  |  %s" % (base, e["name"])
+
+# ---- preview --------------------------------------------------------------
+def _clear_preview():
+    if PREVIEW.get("kind") is None:
+        return
+    if PREVIEW.get("tex") is not None:
+        try:
+            unload_texture(PREVIEW["tex"])
+        except Exception:
+            pass
+        PREVIEW["tex"] = None
+        img = boxes.get("pimg")
+        if img is not None:
+            img.texture = None
+    vbox = boxes.get("pvid")
+    if vbox is not None and vbox._media is not None:
+        try:
+            vbox._media.unload()
+        except Exception:
+            pass
+        vbox._media = None
+    PREVIEW["path"] = None
+    PREVIEW["kind"] = None
+
+def draw_preview(box):
+    """Per-frame script on the preview pane: load media for the selection."""
+    sel = FS["sel"]
+    e = FS["entries"][sel] if 0 <= sel < len(FS["entries"]) else None
+    if e is None:
+        if PREVIEW.get("kind") is not None:
+            _clear_preview()
+        return
+    kind = e["kind"]
+    p = e["path"]
+    if PREVIEW.get("path") == p and PREVIEW.get("kind") == kind:
+        return
+    _clear_preview()
+    PREVIEW["path"] = p
+    PREVIEW["kind"] = kind
+    if kind == "video":
+        try:
+            load_video_into(boxes["pvid"], p)   # streams via ffmpeg
+        except Exception:
+            PREVIEW["kind"] = "text"
+    elif kind == "image":
+        try:
+            t = load_texture(p)
+            PREVIEW["tex"] = t
+            boxes["pimg"].texture = t
+        except Exception:
+            PREVIEW["kind"] = "text"
+
+def preview_is(kind):
+    return PREVIEW.get("kind") == kind
+
+def preview_info():
+    e = FS["entries"][FS["sel"]] if 0 <= FS["sel"] < len(FS["entries"]) else None
+    if e is None:
+        return "Select a file to preview it.\n\nUp/Down: move selection\nEnter: open\nBackspace: parent folder\nO: open with system handler"
+    k = "Directory" if e["is_dir"] else e["kind"].upper()
+    s = "-" if e["is_dir"] else e["size"]
+    d = e["date"] or "-"
+    extra = "\n\nPress O to open with the system handler." if not e["is_dir"] else ""
+    return "%s\n%s\n%s  %s\n\n%s%s" % (e["name"], k, s, d, e["path"], extra)
+
+# ---- fonts for the icon glyphs (.font on the icon boxes) ------------------
+ICON_FONT = None
+_FONTS_LOADED = False
+
+def _load_fonts():
+    global ICON_FONT, _FONTS_LOADED
+    if _FONTS_LOADED:
+        return
+    _FONTS_LOADED = True
+    cps = list({ord(c) for c in ICONS.values()})
+    arr = _pr.ffi.new("int[]", cps)
+    try:
+        ICON_FONT = load_font_ex(ICON_FONT_PATH, 48,
+                                 _pr.ffi.cast("int *", arr), len(cps))
+        set_texture_filter(ICON_FONT.texture,
+                           TextureFilter.TEXTURE_FILTER_BILINEAR)
+    except Exception:
+        ICON_FONT = get_font_default()
+
+# ---- keyboard navigation (runs every frame on the list) -------------------
+ROW_H = 50   # measured row height incl. margins (see rebuild_rows)
+
+def _scroll_to_sel():
+    lbox = boxes.get("flist")
+    if lbox is None:
+        return
+    y = FS["sel"] * ROW_H
+    off = lbox.scroll_offset.y
+    vis = lbox.rect.height
+    if y < off:
+        lbox.scroll_offset.y = max(0.0, y)
+    elif y + ROW_H > off + vis:
+        lbox.scroll_offset.y = y + ROW_H - vis
+
+def keys_tick(box):
+    if FS.get("need_init"):
+        FS["need_init"] = False
+        rebuild_rows()                 # create the fixed row pool once
+        refresh()
+    if not SEARCH["active"]:
+        n = len(FS["entries"])
+        if is_key_pressed(KeyboardKey.KEY_DOWN) and n:
+            FS["sel"] = max(0, min(n - 1, FS["sel"] + 1))
+            _scroll_to_sel()
+        if is_key_pressed(KeyboardKey.KEY_UP) and n:
+            FS["sel"] = max(0, min(n - 1, FS["sel"] - 1))
+            _scroll_to_sel()
+        if is_key_pressed(KeyboardKey.KEY_ENTER) or is_key_pressed(KeyboardKey.KEY_KP_ENTER):
+            e = FS["entries"][FS["sel"]] if 0 <= FS["sel"] < n else None
+            if e is not None:
+                if e["is_dir"]:
+                    cd(e["path"])
+                else:
+                    open_external(None)
+        if is_key_pressed(KeyboardKey.KEY_BACKSPACE):
+            go_up(None)
+        if is_key_pressed(KeyboardKey.KEY_O):
+            open_external(None)
+    paint_rows(box)                    # re-point pooled rows at current scroll
+@end
+
+# ------ default styling inherited by every box (all geometry zeroed) ------
+[4-default]:
+	.color=BG
+	.border_color=LINE
+	.text_color=TEXT
+	.horizontal
+	.padding=0
+	.margin=0
+	.border=1
+	.radius=0
+	.align_x=left
+	.align_y=top
+
+# ------ the explorer ------
+[1-root]:
+	.vertical
+	.color=BG
+	[1-topbar]:
+		.horizontal
+		.color=PANEL
+		.padding=4
+		[2-title]:
+			.text="FILE EXPLORER"
+			.color=None
+			.text_color=ACCENT
+			.align_y=center
+			.padding=0
+		[6-tbpath]:
+			.text=calc(path_text())
+			.color=None
+			.text_color=TEXT
+			.align_x=center
+			.align_y=center
+			.padding=0
+		# tb.* share styling; each keeps its own text/click
+		[1-tb.up]:
+			.text="\ue5d8"
+			.color=PANEL_LIGHT
+			.text_color=TEXT
+			.align_x=center
+			.align_y=center
+			.padding=0
+			.radius=10
+			.margin=2
+			.font=/usr/share/fonts/ttf-material-symbols-variable/MaterialSymbolsRounded[FILL,GRAD,opsz,wght].ttf
+			.click=go_up(tb.up)
+		[1-tb.home]:
+			.text="\ue88a"
+			.click=go_home(tb.home)
+		[1-tb.refresh]:
+			.text="\ue5d5"
+			.click=go_refresh(tb.refresh)
+		[1-tb.search]:
+			.text="\ue8b6"
+			.click=toggle_search(tb.search)
+	[1-srow]:
+		.horizontal
+		.color=PANEL
+		.hidden=calc(not search_active())
+		.script=search_keys(box)
+		[1-sicon]:
+			.text="\ue8b6"
+			.font=/usr/share/fonts/ttf-material-symbols-variable/MaterialSymbolsRounded[FILL,GRAD,opsz,wght].ttf
+			.color=None
+			.align_y=center
+		[6-squery]:
+			.text=calc(search_text())
+			.color=None
+			.text_color=TEXT
+			.align_y=center
+		[1-shint]:
+			.text="type to filter   Esc to close"
+			.color=None
+			.text_color=MUTED
+			.align_y=center
+			.align_x=right
+	[20-body]:
+		.horizontal
+		.color=None
+		[1-side]:
+			.vertical
+			.scroll
+			.color=PANEL
+			.adjust
+			[1-side.title]:
+				.text="QUICK LOCATIONS"
+				.color=None
+				.text_color=ACCENT
+			# side.* share styling; each keeps its own text/click
+			[1-side.home]:
+				.text="Home"
+				.color=PANEL_LIGHT
+				.hover_color=ACCENT_SOFT
+				.text_color=TEXT
+				.margin=1
+				.radius=8
+				.click=nav(side.home, 0)
+			[1-side.desktop]:
+				.text="Desktop"
+				.click=nav(side.desktop, 1)
+			[1-side.documents]:
+				.text="Documents"
+				.click=nav(side.documents, 2)
+			[1-side.downloads]:
+				.text="Downloads"
+				.click=nav(side.downloads, 3)
+			[1-side.pictures]:
+				.text="Pictures"
+				.click=nav(side.pictures, 4)
+			[1-side.music]:
+				.text="Music"
+				.click=nav(side.music, 5)
+			[1-side.videos]:
+				.text="Videos"
+				.click=nav(side.videos, 6)
+			[1-side.root]:
+				.text="Root"
+				.click=nav(side.root, 7)
+		[5-main]:
+			.vertical
+			.color=None
+			[1-cols]:
+				.horizontal
+				.color=PANEL
+				[2-col.icon]:
+					.color=None
+				[7-col.name]:
+					.text="NAME"
+					.color=None
+					.text_color=MUTED
+					.align_y=center
+				[3-col.size]:
+					.text="SIZE"
+					.color=None
+					.text_color=MUTED
+					.align_x=right
+					.align_y=center
+				[4-col.date]:
+					.text="MODIFIED"
+					.color=None
+					.text_color=MUTED
+					.align_x=right
+					.align_y=center
+			[25-flist]:
+				.vertical
+				.scroll
+				.color=BG
+				.script=keys_tick(box)
+		[1-preview]:
+			.vertical
+			.scroll
+			.color=PANEL
+			.padding=1
+			.adjust
+			.script=draw_preview(box)
+			[1-phead]:
+				.text="PREVIEW"
+				.color=None
+				.text_color=ACCENT
+			[1-pvid]:
+				.texture_fit=contain
+				.color=BLACK
+				.radius=0
+				.size=(0, 240)
+				.hidden=calc(not preview_is("video"))
+				.click=media_toggle(pvid)
+			[1-pimg]:
+				.texture_fit=contain
+				.color=None
+				.size=(0, 240)
+				.hidden=calc(not preview_is("image"))
+			[1-pinfo]:
+				.text=calc(preview_info())
+				.color=None
+				.text_color=TEXT
+				.align_y=top
+	[1-status]:
+		.horizontal
+		.color=PANEL
+		.padding=0
+		[3-stsel]:
+			.text=calc(status_text())
+			.color=None
+			.text_color=MUTED
+			.align_y=center
+			.padding=0
+		[1-stkeys]:
+			.text="Up/Down select   Enter open   Backspace up   O external"
+			.color=None
+			.text_color=MUTED
+			.align_x=right
+			.align_y=center
+			.padding=0

@@ -19,7 +19,10 @@ containers, textures/animations/video, and first-class Python integration
   `border`, `color`, `border_color`, horizontal/vertical orientation.
 - **Rounded corners** — `.radius` (converted to raylib's roundness fraction).
 - **Text** — wrapping, font auto-shrink to fit the box, `align_x` / `align_y`
-  (left/center/right, top/center/bottom), `text_color`.
+  (left/center/right, top/center/bottom), `text_color`. Text wraps at spaces,
+  dots, hyphens, underscores, slashes and backslashes, and when it still can't
+  fit the box (even at the minimum readable font size) it is truncated with an
+  ellipsis instead of rendering unreadably small.
 - **Scrolling** — `.scroll` containers (vertical or horizontal) with wheel
   scrolling, natural-size measurement, a reserved scrollbar gutter, and nested
   scroll (a scrollable child cancels its parent).
@@ -116,6 +119,8 @@ examples/
   glassurf.sui    "Lens Control" — glassy lenses over the Waves wallpaper
   player.sui      "Video Player" — plays any file via ffmpeg, streams torrents
                   (libtorrent), and reads .cbz comics; emoji buttons via .font
+  explorer.sui    "File Explorer" — a virtualized, scrollable filesystem browser
+                  with search, quick locations and an in-app media preview
   shaders/        shader sources (plasma, swirl, mandelbrot, waves, glass, frosted, flow)
   assets/         final artwork committed here: logo.png + video.mp4
 ```
@@ -151,7 +156,7 @@ Indentation (tabs) defines parent/child nesting. One property per line.
 |------------------|----------------------------|-------|
 | `strength`/`number` | `[2-name]:`             | relative space |
 | `weight`         | `.weight=-0.7`           | responsiveness exponent: `effective = strength * (parent_axis/800) ** weight` — 0 = fixed ratio, >0 grows on large parents, <0 grows on small parents |
-| `text`           | `.text="Hello"`            | wrapped & auto-shrunk |
+| `text`           | `.text="Hello"`            | wrapped (at ` .-_/\`), auto-shrunk, ellipsized when it can't fit |
 | `color`          | `.color=PANEL`             | fill (or `None`) |
 | `border_color`   | `.border_color=LINE`       | |
 | `hover_color`    | `.hover_color=ACCENT_SOFT` | border on hover |
@@ -172,7 +177,7 @@ Indentation (tabs) defines parent/child nesting. One property per line.
 | `texture_fit`    | `.texture_fit=contain`     | stretch/contain/cover/tile |
 | `click`          | `.click=set_children(swap, content.home)` | click callback |
 | `hover`          | `.hover=...`               | hover callback |
-| `adjust`         | `.adjust`                  | drag the box with the mouse to resize its strength live |
+| `adjust`         | `.adjust`                  | drag the box with the mouse to resize its strength live (smooth float strengths, even at small sizes) |
 | `script`         | `.script=draw_circle(...)` | Python run every frame |
 | `hidden`         | `.hidden=calc(ratio < 1.0)` | visible/calc |
 

@@ -137,6 +137,7 @@ that means `.vertical=True`). The commonly used ones:
 .hover_color=ACCENT_SOFT     # hover highlight colour
 .selected_color=LINE         # while pressed/selected
 .adjust                      # drag it with the mouse to resize its strength
+                             # (strength stays a smooth float even at small sizes)
 ```
 
 Inline attributes are allowed after a header: `[1-inline]: .color=(0,0,0,255) .align_x=center`
@@ -303,6 +304,14 @@ needed.
   (just text / shader / children).
 - **Strength distributes the parent's axis**. `[5-...]` vs `[30-...]` is a 5:30
   split — use it to make a sidebar vs. main content.
+- **Text wraps then truncates**. Long text wraps at spaces, dots, hyphens,
+  underscores, slashes and backslashes, then the font auto-shrinks to fit.
+  If it still can't fit the box (a huge unbroken filename, or more lines than
+  the box has room for), it is cut off with a `...` ellipsis rather than being
+  rendered unreadably small.
+- **`.adjust` strengths are floats.** Dragging an `.adjust` box writes a smooth
+  float strength (down to ~0.01), so you can shrink a sidebar to nearly nothing
+  and it still tracks the mouse — no snapping to integer strengths.
 - **Order = z-order**: a box listed after its siblings draws on top. For an
   overlay, put it last.
 - **Media & shader paths are relative to the layout file's folder**.

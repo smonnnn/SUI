@@ -609,7 +609,7 @@ class Box:
     hover_color: Optional[Color] = None
     selected_color: Optional[Color] = None
     text_color: Optional[Color] = BLACK
-    strength: int = 100
+    strength: float = 100
     weight: Optional[float] = None   # .weight=... overrides strength (0 ok); None = unset
     adjust: bool = False             # .adjust -> Ctrl+scroll tweaks strength live
     hidden: bool = False
@@ -840,42 +840,120 @@ def _eval_globals():
 # ---------------------------------------------------------------------------
 # Text wrapping (kept from original, made tolerance aware)
 # ---------------------------------------------------------------------------
-def wrap_text(text, font, font_size, spacing, max_width, max_height, shrink_font=True):
+def _truncate_word(word, font, font_size, spacing, max_width):
+    """Return `word` truncated to fit `max_width`, with a trailing ellipsis."""
+    ell = "..."
+    if measure_text_ex(font, word, font_size, spacing).x <= max_width:
+        return word
+    ell_w = measure_text_ex(font, ell, font_size, spacing).x
+    limit = max_width - ell_w
+    if limit <= 0:
+        return ell
+    lo, hi = 0, len(word)
+    while lo < hi:
+        mid = (lo + hi + 1) // 2
+        if measure_text_ex(font, word[:mid], font_size, spacing).x <= limit:
+            lo = mid
+        else:
+            hi = mid - 1
+    return word[:lo] + ell
+
+
+def _truncate_height(wrapped_text, font, font_size, spacing, max_width, max_height):
+    """Keep only the lines that fit within max_height, ellipsizing the last
+    visible line so it's clear there is more text."""
+    lines = wrapped_text.split("\n")
+    line_h = measure_text_ex(font, "Ag", font_size, spacing).y or font_size
+    max_lines = max(1, int(max_height / max(line_h, 1)))
+    if len(lines) <= max_lines:
+        return wrapped_text
+    keep = lines[:max_lines]
+    keep[-1] = _truncate_word(keep[-1] + "...", font, font_size, spacing, max_width)
+    return "\n".join(keep)
+
+
+def wrap_text(text, font, font_size, spacing, max_width, max_height, shrink_font=True, min_font=None):
     original_text = text
-    wrap_chars = [" ", ".", "-"]
-    while True:
-        text = original_text
+    wrap_chars = [" ", ".", "-", "_", "/", "\\"]
+    if min_font is None:
+        # stop shrinking at roughly half size — below that the text is hard to
+        # read, so we truncate instead
+        min_font = max(10, font_size // 2)
+
+    def build():
+        """Wrap original_text at the current font size into lines."""
+        t = original_text
         lines = []
-        while text:
-            nlpos = len(text)
+        while t:
+            nlpos = len(t)
             while nlpos > 0:
-                t = text[:nlpos]
-                text_size = measure_text_ex(font, t, font_size, spacing)
-                if text_size.x < max_width:
+                ts = measure_text_ex(font, t[:nlpos], font_size, spacing)
+                if ts.x < max_width:
                     break
                 nlpos -= 1
             if nlpos == 0:
                 nlpos = 1
             wrap_pos = nlpos
-            if nlpos < len(text) and nlpos > 1:
-                for i, c in enumerate(reversed(text[:nlpos])):
+            if nlpos < len(t) and nlpos > 1:
+                for i, c in enumerate(reversed(t[:nlpos])):
                     if c in wrap_chars:
                         wrap_pos = nlpos - i
                         break
-            lines.append(text[:wrap_pos])
-            text = text[wrap_pos:].lstrip()
-        wrapped_text = "\n".join(lines)
-        text_size = measure_text_ex(font, wrapped_text, font_size, spacing)
-        longest_word = max(
+            lines.append(t[:wrap_pos])
+            t = t[wrap_pos:].lstrip()
+        return "\n".join(lines)
+
+    def longest_word():
+        return max(
             (measure_text_ex(font, w, font_size, spacing).x
-             for w in original_text.replace("-", " ").split()),
+             for w in re.split(r"[ .\-_/\\]+", original_text) if w),
             default=0.0)
-        # shrink when too tall, or when the longest word can't fit on one line
+
+    def line_height():
+        return measure_text_ex(font, "Ag", font_size, spacing).y or font_size
+
+    while True:
+        wrapped_text = build()
+        text_size = measure_text_ex(font, wrapped_text, font_size, spacing)
+        lw = longest_word()
+        n_lines = wrapped_text.count("\n") + 1
+        max_lines = max(1, int(max_height / max(line_height(), 1))) if max_height > 0 else n_lines
+        # height can be solved by truncation only if more than one line must go
         fits_height = text_size.y <= max_height
-        fits_width = longest_word <= max_width
-        if (fits_height and fits_width) or font_size <= 1 or not shrink_font:
-            return (wrapped_text, font_size)
+        fits_width = lw <= max_width
+        # once shrinking would get unreadable, stop (a later pass truncates);
+        # but a single line that still doesn't fit can't be truncated, so keep
+        # shrinking it as before.
+        stop_for_height = (font_size <= min_font and n_lines > max_lines and max_lines >= 1)
+        if (fits_height and fits_width) or font_size <= 1 or not shrink_font or stop_for_height:
+            break
         font_size -= 1
+
+    if lw > max_width:
+        # A single word is still wider than the box even at the smallest font
+        # size (e.g. one huge unbroken filename). It can't be shown in full,
+        # so truncate it to fit instead of chunking it into many tiny lines.
+        # The ellipsis is protected with a sentinel so the wrap pass doesn't
+        # treat its "." characters as wrap points.
+        ell_sent = "\x01"
+        parts = []
+        for p in re.split(r"([ .\-_/\\]+)", original_text):
+            if (not p or p[0] in wrap_chars or
+                    measure_text_ex(font, p, font_size, spacing).x <= max_width):
+                parts.append(p)
+            else:
+                parts.append(_truncate_word(p, font, font_size, spacing, max_width).replace("...", ell_sent))
+        original_text = "".join(parts)
+        wrapped_text = build().replace(ell_sent, "...")
+
+    # Height: if the wrapped text still needs more lines than the box can hold
+    # at the current (already min) font size, keep only the lines that fit and
+    # ellipsize the last visible one so it's clear there's more.
+    text_size = measure_text_ex(font, wrapped_text, font_size, spacing)
+    if text_size.y > max_height:
+        wrapped_text = _truncate_height(wrapped_text, font, font_size, spacing,
+                                        max_width, max_height)
+    return (wrapped_text, font_size)
 
 
 FONT = None
@@ -1940,9 +2018,14 @@ def _drag_adjust(box):
         if factor and factor > 0:
             eff = eff / factor
     if eff == float("inf"):
-        box.strength = 10000
+        box.strength = 10000.0
     else:
-        box.strength = max(1, min(10000, int(round(eff))))
+        # Keep the strength as a *float* (no int rounding, no floor of 1) so
+        # dragging stays smooth even at low strength values. Rounding to int
+        # snapped sub-1 strengths up to 1 and skipped fine steps (1 -> 2), which
+        # made an `.adjust` box jump near the small end. The layout math in
+        # _effective_strength() already works on floats.
+        box.strength = max(0.01, min(10000.0, eff))
 
 
 def is_child_of(box: Box, pparent: Box):
